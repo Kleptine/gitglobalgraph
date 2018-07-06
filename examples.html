@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+    <script src="gitgraph.js"></script>
+    <script src="gitwrapper.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/gitgraph.js/1.11.4/gitgraph.css"/>
+</head>
+<body>
+<canvas id="gitGraph"></canvas>
+
+<script type="text/javascript">
+  const template = new GitGraph.Template({
+    colors: ["#979797", "#008fb5", "#f1c109"],
+    branch: {
+      lineWidth: 10,
+      spacingX: 50,
+      labelRotation: 0,
+    },
+    commit: {
+      spacingY: -60,
+      dot: {
+        size: 14
+      },
+      message: {
+        font: "normal 14pt Arial"
+      }
+    }
+  })
+
+  var gitgraph = new GitGraph({
+    template: template,
+    orientation: "vertical-reverse",
+    mode: "compact"
+  });
+
+  var master = gitgraph.branch({
+    name: "master",
+    column: 2,
+  });
+
+  gitgraph.commit({tag: "master"}).commit().commit();         // 3 commits upon HEAD
+  var topic = master.branch({
+    name: "topic",
+    column: 3
+  }); // New branch from develop
+
+  // Well, if you need to go deeper…
+
+  var maintenance = gitgraph.branch({
+    parentBranch: master,
+    name: "maintenance",
+    column: 1             // which column index it should be displayed in
+  });
+  maintenance.commit({
+    tag: "maintenance"
+  });
+  topic.commit({
+    tag: "topic"
+  });
+</script>
+</body>
+</html>

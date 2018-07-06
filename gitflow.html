@@ -1,0 +1,781 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Git - Preventing parellel changes to binary files.</title>
+    <script src="gitgraph.js"></script>
+    <script src="gitwrapper.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/vis/4.21.0/vis.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.17.10/lodash.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/gitgraph.js/1.11.4/gitgraph.css"/>
+
+    <style type="text/css">
+
+        .deps {
+            width: 300px;
+            height: 300px;
+            outline: solid gray 2px;
+        }
+
+        .example {
+            width: 500px;
+            height: 500px;
+        }
+
+        .errors {
+            width: 300px;
+            color: darkred;
+        }
+    </style>
+</head>
+<body>
+This page contains a system for adding file locking to a git repo. File locking prevents parallel edits of binary files
+on branches that are intended to merge. Preventing these conflicts at the source limits lost work.
+
+<br/><br/>This page is both a collection of workflows as well as a set of tests. Each graph below is tested with a loose
+js wrapper
+around the gitgraph.js library. It validates commits with the same rules as the proposed system.
+</body>
+
+<script type="text/javascript">
+
+  function createDagVis(repo, elementId, show_bi_directional) {
+    // create an array with nodes
+    var nodes = new vis.DataSet(
+      _.chain(repo.gitgraph.branches)
+        .map(branch => {
+          return {
+            id: branch.name,
+            label: branch.name,
+          }
+        }).value()
+    );
+
+    if (false && show_bi_directional) {
+      var edges = _.chain(repo.acceptsMergesFrom)
+        .entries()
+        .map(pair => {
+          return pair[1].map(branch => {
+            return {
+              from: pair[0],
+              to: branch.gitGraphBranch.name,
+              arrows: 'from',
+            }
+          });
+        })
+        .flatten()
+        .value()
+    } else {
+      var edges = [];
+      for (var i = 0; i < repo.gitgraph.branches.length; i++) {
+        for (var j = i + 1; j < repo.gitgraph.branches.length; j++) {
+          const branchA = repo.gitgraph.branches[i];
+          const branchB = repo.gitgraph.branches[j];
+          let acceptsMergesFromListA = repo.acceptsMergesFrom[branchA.name];
+          let acceptsMergesFromListB = repo.acceptsMergesFrom[branchB.name];
+
+          const mergeFromAToB = acceptsMergesFromListB && _.includes(acceptsMergesFromListB.map(b => b.gitGraphBranch), branchA);
+          const mergeFromBToA = acceptsMergesFromListA && _.includes(acceptsMergesFromListA.map(b => b.gitGraphBranch), branchB);
+
+          if (mergeFromAToB && mergeFromBToA) {
+            edges.push({
+              from: branchA.name,
+              to: branchB.name,
+              arrows: "to;from",
+              width: 3,
+            });
+          } else if (mergeFromAToB) {
+            edges.push({
+              from: branchA.name,
+              to: branchB.name,
+              arrows: 'to',
+              width: 3,
+            });
+          } else if (mergeFromBToA) {
+            edges.push({
+              from: branchB.name,
+              to: branchA.name,
+              arrows: 'to',
+              width: 3,
+            });
+
+          }
+        }
+      }
+    }
+
+    // create an array with edges
+    var edges = new vis.DataSet(
+      edges
+    );
+
+    // create a network
+    var container = document.getElementById(elementId);
+    var data = {
+      nodes: nodes,
+      edges: edges
+    };
+    var options = {};
+    var network = new vis.Network(container, data, options);
+  }
+</script>
+
+<script type="text/javascript">
+  'use strict';
+
+  function main() {
+    function run(description, test) {
+      // render the test
+      document.write("<h2>" + test.name + "</h2>")
+      document.write("<div>" + description + "</div>")
+      document.write("<canvas class=example id=graph_" + test.name + "></canvas>");
+      document.write("<div style='display: inline-block; margin-left: 35px'>");
+      document.write("<div class=errors id=graph_errors_" + test.name + "></div>");
+      document.write("Branch dependencies:")
+      document.write("<div class=deps id=graph_deps_" + test.name + "></div>");
+      document.write("</div>");
+      document.write("<hr/>");
+
+      var repo = new Repo(test.name);
+      try {
+        test(repo);
+      } catch (err) {
+        // something happened
+        throw err;
+      } finally {
+        // render correct errors
+        for (let i = 0; i < repo.errorLog.length; i++) {
+          document.getElementById("graph_errors_" + test.name).innerHTML += (repo.errorLog[i].message).replace(/\n/g, '<br/><br/>') + "<br/><br/>";
+        }
+
+        // render deps
+        createDagVis(repo, "graph_deps_" + test.name);
+      }
+    }
+
+    run("Modifying a file first on a feature branch, and then trying to modify it on a second feature branch without merging is an error. A later merge would clobber one of the versions.",
+      function two_conflicting_feature_branches(repo) {
+
+
+        var master = repo.branch({
+          name: "master",
+          tagFont: "normal 16pt Arial",
+          column: 3
+        });
+
+        repo.commit().commit().commit();         // 3 commits upon HEAD
+
+        var featureA = master.branch({
+          name: "featureA",
+          column: 2,
+        });
+        featureA.commit();
+
+        var featureB = master.branch({
+          name: "featureB",
+          column: 4
+        });
+
+        shouldThrowLocksError(repo.errorLog, () => {
+          featureB.commit({
+            message: "Error: cannot create a commit without integrating 2dbece3.\n"
+          });
+        });
+
+        repo.gitgraph.render();
+
+      });
+
+    run("Dependency is transitive, so sub-branches will lock out all other branches in their connected component.",
+      function conflicting_sub_branch(repo) {
+
+        var master = repo.branch({
+          name: "master",
+          tagFont: "normal 16pt Arial",
+          column: 2
+        });
+
+        repo.commit().commit().commit();         // 3 commits upon HEAD
+
+
+        var featureA = master.branch({
+          name: "feature",
+          column: 3,
+        });
+        master.commit({filesChanged: ["fileA.bin"]});
+        featureA.commit({filesChanged: ["fileB.bin"]});
+
+
+        var featureB = featureA.branch({
+          name: "sub_feature",
+          column: 4
+        });
+
+        shouldThrowLocksError(repo.errorLog, () => {
+          featureB.commit({
+            filesChanged: ["fileA.bin"],
+            message: "Error: cannot create a commit without integrating master.\n"
+          });
+        });
+
+      });
+
+    run("It should be valid to merge between non-dependent branches, understanding, of course, that there may be conflicts in binary files you must resolve. This merge shouldn't affect future usage.",
+      function allow_merges_between_non_dependent_branches(gitgraph) {
+        var master = gitgraph.branch({
+          name: "master",
+          tagFont: "normal 11pt Arial",
+          column: 3
+        });
+
+        gitgraph.commit().commit().commit();         // 3 commits upon HEAD
+
+        var maint = master.branch({
+          name: "maintenance",
+          column: 2,
+          divergent: true,
+        });
+
+        maint.commit().commit();
+
+        master.merge(maint);
+
+        master.commit({
+          tag: "master"
+        });
+        maint.commit({
+          message: "Ok. still on maintenance branch",
+          tag: "maintenance"
+        });
+
+      });
+
+
+    run("This is the most simple case. feature and master are mergeable: feature might eventually merge back into master at the end of the work, and master may merge into feature to keep the branch up to date. maintenance has been declared 'not connected' to any branches, and can modify files freely without halting work on master or feature (and vice-versa).",
+      function allow_parallel_edits_on_maintenance_branch(gitgraph) {
+        var master = gitgraph.branch({
+          name: "master",
+          tagFont: "normal 16pt Arial",
+          column: 3
+        });
+
+        gitgraph.commit().commit().commit();         // 3 commits upon HEAD
+
+        var maintenance = master.branch({
+          name: "maintenance",
+          column: 2,
+          divergent: true,
+        });
+        maintenance.commit();
+
+        var myfeature = master.branch({
+          name: "feature",
+          column: 4
+        });
+        myfeature.commit({
+          message: "Ok. feature doesn't depend on maintenance."
+        });
+      });
+
+    run("The locking system applies individually to file paths. Modifying different files on dependent branches is fine.", function no_conflicts_if_different_files_are_modified(gitgraph) {
+      var master = gitgraph.branch({
+        name: "master",
+        tagFont: "normal 16pt Arial",
+        column: 3
+      });
+
+      gitgraph.commit().commit().commit();         // 3 commits upon HEAD
+
+      var feature_a = master.branch({
+        name: "feature_a",
+        column: 4,
+      });
+
+      var featureb = master.branch({
+        name: "feature_b",
+        column: 2,
+      });
+
+      feature_a.commit({
+        message: "modified afile.bin.",
+        filesChanged: ["fileA.bin"],
+      }).commit({
+        filesChanged: ["fileA.bin"],
+      });
+
+      featureb.commit({
+        message: "Ok. 9003969 does't change fileb.bin.",
+        filesChanged: ["fileB.bin"],
+      });
+    });
+
+    run("Conflicts are still recognized after non-conflicting commits for other file paths.", function different_file_modifications_plus_conflict(gitgraph) {
+      var master = gitgraph.branch({
+        name: "master",
+        tagFont: "normal 16pt Arial",
+        column: 3
+      });
+
+      gitgraph.commit().commit().commit();         // 3 commits upon HEAD
+
+      var feature_a = master.branch({
+        name: "feature_a",
+        column: 4,
+      });
+
+      var featureb = master.branch({
+        name: "feature_b",
+        column: 2,
+      });
+
+      feature_a.commit({
+        message: "modified afile.bin.",
+        filesChanged: ["fileA.bin"],
+      }).commit({
+        filesChanged: ["fileA.bin"],
+      });
+
+      featureb.commit({
+        message: "Ok. 9003969 does't change fileb.bin.",
+        filesChanged: ["fileB.bin"],
+      });
+
+      shouldThrowLocksError(gitgraph.errorLog, () => {
+        featureb.commit({
+          message: "Error: commit touches fileA.bin.",
+          filesChanged: ["fileA.bin"]
+        });
+      });
+    });
+
+
+    run("This is a non-traditional setup. master and maintenance are two branches that are diverging from each other (allow parallel locks). share_feature is a branch with a change that plans to be merged into both. Connecting shared_feature to master and maintenance would tie master and maintenance together (dependencies are transitive). In reality, master or maintenance should never merge into shared_feature. If they was expected they were to merge freely, then they would clobber each other's merges of locked files. Because of this if we specify our dependency asymmetrically, everything is sound. shared_feature is expected to merge into master and main but not the reverse.",
+      function shared_feature_between_maintenance_and_master__with_deps(repo) {
+        var master = repo.branch({
+          name: "master",
+          tagFont: "normal 16pt Arial",
+          column: 3
+        });
+
+        master.commit().commit().commit();         // 3 commits upon HEAD
+
+        let maintenance = master.branch({
+          name: "maintenance",
+          column: 2,
+        });
+
+        let shared_feature = master.branch({
+          name: "shared_feature",
+          column: 4
+        });
+
+        repo.willMergeInto(shared_feature, master);
+        repo.willMergeInto(shared_feature, maintenance);
+        repo.willNotMergeInto(master, shared_feature);
+        repo.willNotMergeInto(maintenance, shared_feature);
+
+        repo.willNotMergeInto(master, maintenance);
+        repo.willNotMergeInto(maintenance, master);
+
+        maintenance.commit({filesChanged: []});
+        master.commit({filesChanged: []});
+
+        shared_feature.commit({filesChanged: ["file_shared.bin"], tag: "file_shared.bin"});
+        shared_feature.commit({filesChanged: []});
+
+        shouldThrowLocksError(repo.errorLog, () => {
+          maintenance.commit({
+            filesChanged: ["file_shared.bin"],
+            message: "Error. shared_feature will merge with maintenance and master, and locks changes on both."
+          })
+        });
+
+        shared_feature.commit({filesChanged: ['file_shared.bin']});
+
+        master.commit({
+          filesChanged: ["fileA.bin"],
+          tag: "fileA.bin",
+          message: "master and maintenance are still independent"
+        })
+        maintenance.commit({filesChanged: ["fileA.bin"], tag: "fileA.bin"})
+
+        shared_feature.merge(master);
+        shared_feature.merge(maintenance);
+      })
+
+    run("This is a non-traditional setup. master and maintenance are two branches that are diverging from each other (allow parallel locks). share_feature is a branch with a change that plans to be merged into both. Connecting shared_feature to master and maintenance would tie master and maintenance together (dependencies are transitive). In reality, master or maintenance should never merge into shared_feature. If they was expected they were to merge freely, then they would clobber each other's merges of locked files. Because of this if we specify our dependency asymmetrically, everything is sound. shared_feature is expected to merge into master and main but not the reverse.",
+      function shared_feature__locks_on_master(repo) {
+        var master = repo.branch({
+          name: "master",
+          tagFont: "normal 16pt Arial",
+          column: 3
+        });
+
+        master.commit().commit().commit();         // 3 commits upon HEAD
+
+        let maintenance = master.branch({
+          name: "maintenance",
+          column: 2,
+        });
+
+        let shared_feature = master.branch({
+          name: "shared_feature",
+          column: 4
+        });
+
+        repo.willMergeInto(shared_feature, master);
+        repo.willMergeInto(shared_feature, maintenance);
+        repo.willNotMergeInto(master, shared_feature);
+        repo.willNotMergeInto(maintenance, shared_feature);
+
+        repo.willNotMergeInto(master, maintenance);
+        repo.willNotMergeInto(maintenance, master);
+
+        maintenance.commit({filesChanged: []});
+        master.commit({filesChanged: []});
+
+        shared_feature.commit({filesChanged: []});
+
+        master.commit({
+          filesChanged: ["file_shared.bin"],
+        })
+
+        shouldThrowLocksError(repo.errorLog, () => {
+          shared_feature.commit({filesChanged: ["file_shared.bin"], tag: "file_shared.bin"});
+        });
+      })
+
+    run("A branch should lock out changes in downstream branches.",
+      function one_directional_dependency_1(repo) {
+
+        var master = repo.branch({
+          name: "master",
+          tagFont: "normal 16pt Arial",
+          column: 3
+        });
+
+        repo.commit().commit().commit();         // 3 commits upon HEAD
+
+        master.commit({})
+
+        var stable = master.branch({
+          name: "stable",
+          column: 2,
+        });
+
+        repo.willMergeInto(master, stable);
+        repo.willNotMergeInto(stable, master);
+
+        master.commit({
+          filesChanged: ["fileA.bin"]
+        });
+
+        shouldThrowLocksError(repo.errorLog, () => {
+          stable.commit({
+            message: "Error: File out of date! Must merge changes in fileA from upstream!.\n"
+          });
+        });
+      })
+
+    run("A branch should lock out changes in upstream branches.",
+      function one_directional_dependency_2(repo) {
+
+        var master = repo.branch({
+          name: "master",
+          tagFont: "normal 16pt Arial",
+          column: 3
+        });
+
+        repo.commit().commit().commit();         // 3 commits upon HEAD
+
+        master.commit({})
+
+        var stable = master.branch({
+          name: "stable",
+          column: 2,
+        });
+
+        repo.willMergeInto(master, stable);
+        repo.willNotMergeInto(stable, master);
+
+        stable.commit({
+          message: ["Made a custom change for stable."],
+          filesChanged: ["fileA.bin"]
+        });
+
+        shouldThrowLocksError(repo.errorLog, () => {
+          master.commit({
+            filesChanged: ["fileA.bin"],
+            message: "Error: Next time we merge ->stable, we'll clobber stable!\n"
+          });
+        });
+      })
+
+    run("Connecting bi-directionally results in locks.", function shared_feature_between_maintenance_and_master(repo) {
+      var master = repo.branch({
+        name: "master",
+        tagFont: "normal 16pt Arial",
+        column: 3
+      });
+
+      master.commit().commit().commit();         // 3 commits upon HEAD
+
+      let maintenance = master.branch({
+        name: "maintenance",
+        column: 2,
+      });
+
+      let shared_feature = master.branch({
+        name: "shared_feature",
+        column: 4
+      });
+
+      repo.willNotMergeInto(master, maintenance);
+      repo.willNotMergeInto(maintenance, master);
+
+      maintenance.commit({filesChanged: []});
+      maintenance.commit({filesChanged: []});
+      master.commit({filesChanged: []});
+      master.commit({filesChanged: []});
+      master.commit({filesChanged: []});
+
+      shared_feature.commit({filesChanged: ["file_shared.bin"], tag: "file_shared.bin"});
+
+      maintenance.commit({
+        filesChanged: ["file_shared.bin"],
+        message: "Ok. Didn't properly set dependency for shared_feature."
+      })
+    })
+
+    run("", function abandon_re_merge_feature_branch(repo) {
+      var master = repo.branch({
+        name: "master",
+        tagFont: "normal 16pt Arial",
+        column: 3
+      });
+
+      repo.commit().commit().commit();         // 3 commits upon HEAD
+
+      var feature = master.branch({
+        name: "feature_a",
+        column: 4,
+      });
+      feature.commit({
+        message: "Abandoned feature branch."
+      });
+
+      repo.willNotMergeInto(master, feature);
+      repo.willNotMergeInto(feature, master);
+
+      master.commit("Ok, feature_a abandoned.");
+
+      master.commit();
+
+      master.merge(feature, "Ok, feature_a ");
+      feature.commit();
+      master.commit();
+
+      // BROKEN: How to handle merges.
+    });
+
+    run("Basic reverting workflow. There is no concept of a 'revert' in git, because git assumes all no-op changes will merge invisibly. This isn't true for binary files, as binary files can't merge. Marking a revert in gitlocks is essentially saying 'regarding this branch, changes for file.bin before commit abcdef are irrelevant, and I'm willing to accept merge conflicts'.",
+      function basic_revert(repo) {
+
+        var master = repo.branch({
+          name: "master",
+          tagFont: "normal 16pt Arial",
+          column: 3
+        });
+
+        master.commit().commit().commit();         // 3 commits upon HEAD
+
+        var feature = master.branch({
+          name: "feature_a",
+          column: 4,
+        });
+        feature.commit({
+          filesChanged: ["fileA.bin"]
+        });
+        feature.commit({
+          filesChanged: ["fileA.bin"]
+        });
+
+        repo.willMergeInto(master, feature);
+        repo.willMergeInto(feature, master);
+
+        shouldThrowLocksError(repo.errorLog, () => {
+          master.commit({
+            message: "Error, change on feature branch.",
+            filesChanged: ["fileA.bin"],
+          });
+        });
+
+        // Mark feature head as ignored.
+        repo.markLatestCommitAsRevert(feature)
+
+        master.commit({
+          message: "Ok. work on feature branch is ignored.",
+          filesChanged: ["fileA.bin"]
+        });
+
+      });
+
+    // test to add :  feature, merge master into feature and take master (revert)
+
+    // test to add :  feature, changes, revert, mark revert, try to push into a branch to give someone else a merge conflict.
+
+    run("Should still properly lock out other branches if you make more changes after a revert labeled commit.",
+      function revert_and_make_more_changes_after(repo) {
+      var master = repo.branch({
+        name: "master",
+        tagFont: "normal 16pt Arial",
+        column: 3
+      });
+
+      repo.commit().commit().commit();         // 3 commits upon HEAD
+
+      var feature = master.branch({
+        name: "afile",
+        column: 4,
+      });
+
+      feature.commit({}).commit("revert changes");
+
+      repo.markLatestCommitAsRevert(feature);
+
+      feature.commit({
+        message: "make more changes",
+        filesChanged: ["fileA.bin"],
+      });
+
+      shouldThrowLocksError(repo.errorLog, () => {
+        master.commit({
+          message: "Should throw error because changes made after revert."
+        })
+      });
+      // BROKEN: How to handle merges.
+    });
+
+    run("Cherry-picking isn't well supported. You can only cherry pick properly between branches that aren't dependent.",
+      function git_cherry_pick_workflow(repo) {
+
+        var master = repo.branch({
+          name: "master",
+          tagFont: "normal 16pt Arial",
+          column: 3
+        });
+
+        repo.commit().commit().commit();         // 3 commits upon HEAD
+
+        master.commit({})
+
+        var stable = master.branch({
+          name: "stable",
+          column: 2,
+        });
+
+        repo.willNotMergeInto(master, stable);
+        repo.willNotMergeInto(stable, master);
+
+        stable.commit({ filesChanged: [] });
+
+        var hotfix = stable.branch({
+          name: "hotfix"
+          }
+        );
+
+        stable.commit({ filesChanged: [] });
+
+        hotfix.commit({
+          message: "Hotfix issue on stable.",
+          filesChanged: ["fileA.bin"]
+        });
+
+
+        master.commit({
+          filesChanged: ["fileA.bin"],
+          message: "git cherry-pick from hotfix.\n"
+        });
+      });
+
+
+  }
+
+</script>
+
+<!--<script src="https://isomorphic-git.github.io/js/pify.js"></script>-->
+<!--<script src="https://unpkg.com/browserfs@beta"></script>-->
+<!--<script src="https://unpkg.com/isomorphic-git"></script>-->
+<!--<script src="https://cdnjs.cloudflare.com/ajax/libs/rxjs/6.2.1/rxjs.umd.js"></script>-->
+<script>
+  main();
+  //
+  // BrowserFS.install(window);
+  // BrowserFS.configure({
+  //   fs: 'InMemory', options: {}
+  // }, async function (err) {
+  //   if (err) return console.log(err)
+  //   window.fs = BrowserFS.BFSRequire('fs')
+  //   window.pfs = pify(fs) // make a Promisified version
+  //
+  // });
+  //
+  //
+  // async function createNewGitRepo(name) {
+  //   const dir = "/" + name;
+  //   if (fs.existsSync(dir)) {
+  //     fs.readdirSync(dir).forEach(function (file, index) {
+  //       var curPath = +"/" + file;
+  //       if (fs.statSync(curPath).isDirectory()) { // recurse
+  //         deleteFolderRecursive(curPath);
+  //       } else { // delete file
+  //         fs.unlinkSync(curPath);
+  //       }
+  //     });
+  //     fs.rmdirSync(dir);
+  //   }
+  //
+  //   await pfs.mkdir(dir);
+  //
+  //   try {
+  //     console.log(pfs.rmdir(dir));
+  //   } catch (err) {
+  //     console.log(err);
+  //   }
+  //
+  //   console.log(await pfs.mkdir(dir))
+  //   console.log(await pfs.readdir(dir))
+  //
+  //   // Behold - it is empty!
+  //
+  //   await git.init({
+  //     fs,
+  //     dir,
+  //   });
+  //
+  //   // Now it should not be empty...
+  //   console.log(await pfs.readdir(dir))
+  //   return dir;
+  // }
+
+  function shouldThrowLocksError(errorLog, codeToRun) {
+    try {
+      codeToRun();
+    } catch (err) {
+      // suppress
+      if (err.code === "locks") {
+        console.log("Example properly threw error:");
+        console.log(err);
+        errorLog.push(err);
+        return;
+      } else {
+        throw err;
+      }
+    }
+
+    throw "Should have thrown error."
+  }
+
+</script>
+
+</html>
