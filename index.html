@@ -178,7 +178,7 @@ around the gitgraph.js library. It validates commits with the same rules as the 
 
         shouldThrowLocksError(repo.errorLog, () => {
           featureB.commit({
-            message: "Error: cannot create a commit without integrating 2dbece3.\n"
+            message: "Error: cannot create a commit without integrating featureA.\n"
           });
         });
 
@@ -336,7 +336,7 @@ around the gitgraph.js library. It validates commits with the same rules as the 
       });
 
       featureb.commit({
-        message: "Ok. 9003969 does't change fileb.bin.",
+        message: "Ok. feature_a does't change fileb.bin.",
         filesChanged: ["fileB.bin"],
       });
 
@@ -656,7 +656,8 @@ around the gitgraph.js library. It validates commits with the same rules as the 
       // BROKEN: How to handle merges.
     });
 
-    run("Cherry-picking isn't well supported. You can only cherry pick properly between branches that aren't dependent.",
+    run("Cherry-picking is supported, but isn't often something you should be doing. A cherry-pick duplicates work, " +
+      "and loses the history of the commits. You're much better off sticking to a merge workflow if possible.",
       function git_cherry_pick_workflow(repo) {
 
         var master = repo.branch({

@@ -80,7 +80,7 @@ Repo.prototype.markLatestCommitAsRevert = function (branch) {
   const commit = branch.gitGraphBranch.commits[branch.gitGraphBranch.commits.length - 1];
   commit.isRevert = true;
 
-  this.gitgraph.message("Command: git locks reverted " + branch.name + " " + commit.sha1);
+  this.gitgraph.message("Command: git locks reverted " + branch.gitGraphBranch.name + " " + commit.sha1);
 }
 
 Repo.prototype.getBranchesUpstream = function (branch) {
