@@ -1143,6 +1143,7 @@
     this.type = options.type || null;
     this.tooltipDisplay = _booleanOptionOr(options.tooltipDisplay, true);
     this.onClick = options.onClick || null;
+    this.divergent = options.divergent || false;
     this.representedObject = options.representedObject || null;
     this.parentCommit = options.parentCommit;
     this.x = options.x;
@@ -1200,11 +1201,12 @@
       }
     }
 
+
     // Dot
     this.context.beginPath();
     this.context.arc(this.x, this.y, this.dotSize, 0, 2 * Math.PI, false);
-    this.context.fillStyle = this.dotColor;
-    this.context.strokeStyle = this.dotStrokeColor;
+    this.context.fillStyle =  this.dotColor;
+    this.context.strokeStyle = this.divergent ? "blue" : this.dotStrokeColor;
     this.context.lineWidth = this.dotStrokeWidth;
 
     if (typeof this.context.setLineDash === "function") {

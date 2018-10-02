@@ -1,0 +1,17 @@
+[package]
+name = "shared"
+version = "0.1.0"
+authors = ["John Austin <kleptine@gmail.com>"]
+
+[lib]
+name = "shared"
+path = "lib.rs"
+
+[dependencies]
+git2 = "0.7"
+log = "0.4"
+env_logger = "0.5.13"
+regex = "1.0.5"
+uuid = { version = "0.7", features = ["v4"] }
+hostname = "^0.1"
+nickel = "0.10.1"

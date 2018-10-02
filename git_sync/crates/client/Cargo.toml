@@ -1,0 +1,40 @@
+[package]
+name = "client"
+version = "0.1.0"
+authors = ["John Austin <kleptine@gmail.com>"]
+
+[lib]
+name = "client"
+path = "src/lib.rs"
+
+[[bin]]
+name = "pre-commit"
+path = "src/hooks/pre_commit.rs"
+
+[[bin]]
+name = "post-commit"
+path = "src/hooks/post_commit.rs"
+
+[[bin]]
+name = "post-rewrite"
+path = "src/hooks/post_rewrite.rs"
+
+[[bin]]
+name = "post-merge"
+path = "src/hooks/post_merge.rs"
+
+[dependencies]
+git2 = "0.7"
+log = "0.4"
+env_logger = "0.5.13"
+tempfile = "3"
+regex = "1.0.5"
+uuid = { version = "0.7", features = ["v4"] }
+hostname = "^0.1"
+simple_logger = "0.5.0"
+nickel = "0.10.1"
+
+[dev-dependencies]
+simple_logger = "0.5.0"
+tempfile = "3"
+tests = { path = "../tests"}

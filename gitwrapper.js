@@ -183,30 +183,72 @@ Repo.prototype.render = function () {
 }
 
 Repo.prototype.getConflictingBranches = function (branch) {
-  var allDeps = [];
-  var newDeps = this.getBranchesUpstream(branch);
+  const divergentCommits = getDivergentCommits(branch);
+  const conflictingBranches = [];
 
-  // A conflicting branch is any branch that has a path to this branch (changes will flow from it),
-  // or any branch that is reachable from this branch (changes will flow to it).
+  // Two branches conflict if they exists on the same sub-graph of all divergent commits in either branch's history.
+  // TODO: Do we gain any information by knowing which branch a divergent commit is in?
 
-  while (newDeps.length > 0) {
-    const nextBranch = newDeps.pop();
-    if (!_.includes(allDeps, nextBranch)) {
-      allDeps.push(nextBranch);
-      newDeps = newDeps.concat(this.getBranchesUpstream(nextBranch.gitGraphBranch));
+  // Get all divergent commits in both branches.
+  const branches = Object.values(this.branchesMap);
+  for (let i = 0; i < branches.length; i++) {
+    const potentialConflictingBranch = branches[i].gitGraphBranch;
+    if (potentialConflictingBranch == branch) { continue; }
+
+    const divergentCommitsOther = getDivergentCommits(potentialConflictingBranch);
+    const allDivergent = [].concat(divergentCommits).concat(divergentCommitsOther);
+
+    let differentSubtree = false;
+    for (let j = 0; j < allDivergent.length; j++) {
+      const divergentCommit = allDivergent[j];
+
+      const branchInSubtree = commitDescendsFrom(getBranchHead(branch), divergentCommit);
+      const otherBranchInSubtree = commitDescendsFrom(getBranchHead(potentialConflictingBranch), divergentCommit);
+
+      // If one branch is on a separate sub-graph, then that branch is not conflicting.
+      if ((branchInSubtree && !otherBranchInSubtree) || (!branchInSubtree && otherBranchInSubtree)) {
+        differentSubtree = true;
+        break;
+      }
+
+      if (!branchInSubtree && !otherBranchInSubtree) {
+        throw "Assertion Failed: neither branch exists in the sub-graph for a divergent commit";
+      }
+    }
+
+    // If one branch is on a separate sub-graph, then that branch is not conflicting.
+    if (!differentSubtree) {
+      conflictingBranches.push(branches[i]);
     }
   }
 
-  newDeps = this.getBranchesDownstream(branch);
-  while (newDeps.length > 0) {
-    const nextBranch = newDeps.pop();
-    if (!_.includes(allDeps, nextBranch)) {
-      allDeps.push(nextBranch);
-      newDeps = newDeps.concat(this.getBranchesDownstream(nextBranch));
+  return conflictingBranches;
+}
+
+/**
+ * Gets all commits labeled as divergent in the history of this branch.
+ */
+function getDivergentCommits(branch) {
+
+  var candidates = [getBranchHead(branch)];
+  let divergentCommits = [];
+
+  while (candidates.length > 0) {
+    const candidate = candidates.pop();
+
+    if (candidate.divergent) {
+      divergentCommits.push(candidate);
+    }
+
+    if (candidate.parentCommit !== undefined && candidate.parentCommit !== null) {
+      candidates.push(candidate.parentCommit);
+    }
+    if (candidate.mergeTargetParentCommit !== undefined && candidate.mergeTargetParentCommit !== null) {
+      candidates.push(candidate.mergeTargetParentCommit);
     }
   }
 
-  return allDeps;
+  return divergentCommits;
 }
 
 function findFirstCommitsInParentWithFile(commit, filepaths) {
@@ -237,6 +279,9 @@ function findFirstCommitsInParentWithFile(commit, filepaths) {
   return result;
 }
 
+/**
+ * @returns True if self descends from target, or is the same commit.
+ */
 function commitDescendsFrom(self, target) {
   if (target == self) {
     return true;
@@ -247,12 +292,20 @@ function commitDescendsFrom(self, target) {
   return commitDescendsFrom(self.parentCommit, target) || (self.mergeTargetParentCommit !== undefined && commitDescendsFrom(self.mergeTargetParentCommit, target));
 }
 
+/**
+ * Gets the head commit.
+ */
 function getBranchHead(branch) {
   if (branch.commits.length > 0) {
     return branch.commits[branch.commits.length - 1];
   }
 
-  return branch.parentCommit;
+  if (branch.parentCommit != null) {
+    return branch.parentCommit;
+  }
+
+
+
 }
 
 Repo.prototype.verifyCanCommit = function (branch, filepaths) {

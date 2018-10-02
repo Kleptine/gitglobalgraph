@@ -124,9 +124,9 @@ around the gitgraph.js library. It validates commits with the same rules as the 
   'use strict';
 
   function main() {
-    function run(description, test) {
+    function run(description, test, ignore) {
       // render the test
-      document.write("<h2>" + test.name + "</h2>")
+      document.write("<h2 style='color:" + (ignore ? "gray" : "black") + "'>" + test.name + "</h2>")
       document.write("<div>" + description + "</div>")
       document.write("<canvas class=example id=graph_" + test.name + "></canvas>");
       document.write("<div style='display: inline-block; margin-left: 35px'>");
@@ -141,7 +141,12 @@ around the gitgraph.js library. It validates commits with the same rules as the 
         test(repo);
       } catch (err) {
         // something happened
-        throw err;
+        if (!ignore) {
+          throw err;
+        } else {
+          console.log("Error in ignored test");
+          console.log(err);
+        }
       } finally {
         // render correct errors
         for (let i = 0; i < repo.errorLog.length; i++) {
@@ -155,8 +160,6 @@ around the gitgraph.js library. It validates commits with the same rules as the 
 
     run("Modifying a file first on a feature branch, and then trying to modify it on a second feature branch without merging is an error. A later merge would clobber one of the versions.",
       function two_conflicting_feature_branches(repo) {
-
-
         var master = repo.branch({
           name: "master",
           tagFont: "normal 16pt Arial",
@@ -233,10 +236,9 @@ around the gitgraph.js library. It validates commits with the same rules as the 
         var maint = master.branch({
           name: "maintenance",
           column: 2,
-          divergent: true,
         });
 
-        maint.commit().commit();
+        maint.commit({divergent: true}).commit();
 
         master.merge(maint);
 
@@ -266,7 +268,33 @@ around the gitgraph.js library. It validates commits with the same rules as the 
           column: 2,
           divergent: true,
         });
-        maintenance.commit();
+        maintenance.commit({divergent: true});
+
+        var myfeature = master.branch({
+          name: "feature",
+          column: 4
+        });
+        myfeature.commit({
+          message: "Ok. feature doesn't depend on maintenance."
+        });
+      });
+
+    run("Make sure that having multiple divergent commits at the root of the repo (or branches) doesn't affect outcomes",
+      function divergent_branch_multiple_divergent_commits(gitgraph) {
+        var master = gitgraph.branch({
+          name: "master",
+          tagFont: "normal 16pt Arial",
+          column: 3
+        });
+
+        gitgraph.commit({divergent: true}).commit({divergent: true}).commit({divergent: true});         // 3 commits upon HEAD
+
+        var maintenance = master.branch({
+          name: "maintenance",
+          column: 2,
+          divergent: true,
+        });
+        maintenance.commit({divergent: true});
 
         var myfeature = master.branch({
           name: "feature",
@@ -357,6 +385,8 @@ around the gitgraph.js library. It validates commits with the same rules as the 
           column: 3
         });
 
+        repo.commit();
+
         master.commit().commit().commit();         // 3 commits upon HEAD
 
         let maintenance = master.branch({
@@ -377,7 +407,7 @@ around the gitgraph.js library. It validates commits with the same rules as the 
         repo.willNotMergeInto(master, maintenance);
         repo.willNotMergeInto(maintenance, master);
 
-        maintenance.commit({filesChanged: []});
+        maintenance.commit({filesChanged: [], divergent: true});
         master.commit({filesChanged: []});
 
         shared_feature.commit({filesChanged: ["file_shared.bin"], tag: "file_shared.bin"});
@@ -401,7 +431,7 @@ around the gitgraph.js library. It validates commits with the same rules as the 
 
         shared_feature.merge(master);
         shared_feature.merge(maintenance);
-      })
+      }, true)
 
     run("This is a non-traditional setup. master and maintenance are two branches that are diverging from each other (allow parallel locks). share_feature is a branch with a change that plans to be merged into both. Connecting shared_feature to master and maintenance would tie master and maintenance together (dependencies are transitive). In reality, master or maintenance should never merge into shared_feature. If they was expected they were to merge freely, then they would clobber each other's merges of locked files. Because of this if we specify our dependency asymmetrically, everything is sound. shared_feature is expected to merge into master and main but not the reverse.",
       function shared_feature__locks_on_master(repo) {
@@ -410,6 +440,8 @@ around the gitgraph.js library. It validates commits with the same rules as the 
           tagFont: "normal 16pt Arial",
           column: 3
         });
+
+        repo.commit();
 
         master.commit().commit().commit();         // 3 commits upon HEAD
 
@@ -518,6 +550,8 @@ around the gitgraph.js library. It validates commits with the same rules as the 
         column: 3
       });
 
+      repo.commit();
+
       master.commit().commit().commit();         // 3 commits upon HEAD
 
       let maintenance = master.branch({
@@ -533,7 +567,7 @@ around the gitgraph.js library. It validates commits with the same rules as the 
       repo.willNotMergeInto(master, maintenance);
       repo.willNotMergeInto(maintenance, master);
 
-      maintenance.commit({filesChanged: []});
+      maintenance.commit({filesChanged: [], divergent: true});
       maintenance.commit({filesChanged: []});
       master.commit({filesChanged: []});
       master.commit({filesChanged: []});
@@ -547,7 +581,8 @@ around the gitgraph.js library. It validates commits with the same rules as the 
       })
     })
 
-    run("", function abandon_re_merge_feature_branch(repo) {
+    run("Some work was done in a locking manner on a feature branch. Later we decided we actually do want this work, so " +
+      "we revert the divergence.", function abandon_re_merge_feature_branch(repo) {
       var master = repo.branch({
         name: "master",
         tagFont: "normal 16pt Arial",
@@ -561,100 +596,103 @@ around the gitgraph.js library. It validates commits with the same rules as the 
         column: 4,
       });
       feature.commit({
-        message: "Abandoned feature branch."
+        message: "Abandoned feature branch.",
+        divergent: true
       });
-
-      repo.willNotMergeInto(master, feature);
-      repo.willNotMergeInto(feature, master);
+      const divergent_commit = feature.gitGraphBranch.commits[feature.gitGraphBranch.commits.length - 1];
 
       master.commit("Ok, feature_a abandoned.");
 
       master.commit();
 
-      master.merge(feature, "Ok, feature_a ");
-      feature.commit();
-      master.commit();
+      master.merge(feature);
+      feature.commit("JK! We do want the work here. Untag it as divergent!");
+      divergent_commit.divergent = false;
+
+      shouldThrowLocksError(repo.errorLog, () => {
+        master.commit();
+      });
 
       // BROKEN: How to handle merges.
     });
 
-    run("Basic reverting workflow. There is no concept of a 'revert' in git, because git assumes all no-op changes will merge invisibly. This isn't true for binary files, as binary files can't merge. Marking a revert in gitlocks is essentially saying 'regarding this branch, changes for file.bin before commit abcdef are irrelevant, and I'm willing to accept merge conflicts'.",
-      function basic_revert(repo) {
-
-        var master = repo.branch({
-          name: "master",
-          tagFont: "normal 16pt Arial",
-          column: 3
-        });
-
-        master.commit().commit().commit();         // 3 commits upon HEAD
-
-        var feature = master.branch({
-          name: "feature_a",
-          column: 4,
-        });
-        feature.commit({
-          filesChanged: ["fileA.bin"]
-        });
-        feature.commit({
-          filesChanged: ["fileA.bin"]
-        });
-
-        repo.willMergeInto(master, feature);
-        repo.willMergeInto(feature, master);
-
-        shouldThrowLocksError(repo.errorLog, () => {
-          master.commit({
-            message: "Error, change on feature branch.",
-            filesChanged: ["fileA.bin"],
-          });
-        });
-
-        // Mark feature head as ignored.
-        repo.markLatestCommitAsRevert(feature)
-
-        master.commit({
-          message: "Ok. work on feature branch is ignored.",
-          filesChanged: ["fileA.bin"]
-        });
-
-      });
+    // run("Basic reverting workflow. There is no concept of a 'revert' in git, because git assumes all no-op changes will merge invisibly. This isn't true for binary files, as binary files can't merge. Marking a revert in gitlocks is essentially saying 'regarding this branch, changes for file.bin before commit abcdef are irrelevant, and I'm willing to accept merge conflicts'.",
+    //   function basic_revert(repo) {
+    //
+    //     var master = repo.branch({
+    //       name: "master",
+    //       tagFont: "normal 16pt Arial",
+    //       column: 3
+    //     });
+    //
+    //     master.commit().commit().commit();         // 3 commits upon HEAD
+    //
+    //     var feature = master.branch({
+    //       name: "feature_a",
+    //       column: 4,
+    //     });
+    //     feature.commit({
+    //       filesChanged: ["fileA.bin"]
+    //     });
+    //     feature.commit({
+    //       filesChanged: ["fileA.bin"]
+    //     });
+    //
+    //     repo.willMergeInto(master, feature);
+    //     repo.willMergeInto(feature, master);
+    //
+    //     shouldThrowLocksError(repo.errorLog, () => {
+    //       master.commit({
+    //         message: "Error, change on feature branch.",
+    //         filesChanged: ["fileA.bin"],
+    //       });
+    //     });
+    //
+    //     // Mark feature head as ignored.
+    //     repo.markLatestCommitAsRevert(feature)
+    //
+    //     master.commit({
+    //       message: "Ok. work on feature branch is ignored.",
+    //       filesChanged: ["fileA.bin"]
+    //     });
+    //
+    //   });
 
     // test to add :  feature, merge master into feature and take master (revert)
 
     // test to add :  feature, changes, revert, mark revert, try to push into a branch to give someone else a merge conflict.
 
-    run("Should still properly lock out other branches if you make more changes after a revert labeled commit.",
-      function revert_and_make_more_changes_after(repo) {
-      var master = repo.branch({
-        name: "master",
-        tagFont: "normal 16pt Arial",
-        column: 3
-      });
-
-      repo.commit().commit().commit();         // 3 commits upon HEAD
-
-      var feature = master.branch({
-        name: "afile",
-        column: 4,
-      });
-
-      feature.commit({}).commit("revert changes");
-
-      repo.markLatestCommitAsRevert(feature);
-
-      feature.commit({
-        message: "make more changes",
-        filesChanged: ["fileA.bin"],
-      });
-
-      shouldThrowLocksError(repo.errorLog, () => {
-        master.commit({
-          message: "Should throw error because changes made after revert."
-        })
-      });
-      // BROKEN: How to handle merges.
-    });
+    // run("Should still properly lock out other branches if you make more changes after a revert labeled commit.",
+    //   function revert_and_make_more_changes_after(repo) {
+    //     var master = repo.branch({
+    //       name: "master",
+    //       tagFont: "normal 16pt Arial",
+    //       column: 3
+    //     });
+    //
+    //     repo.commit().commit().commit();         // 3 commits upon HEAD
+    //
+    //     var feature = master.branch({
+    //       name: "afile",
+    //       column: 4,
+    //     });
+    //
+    //     feature.commit({}).commit("revert changes");
+    //
+    //     repo.markLatestCommitAsRevert(feature);
+    //
+    //     feature.commit({
+    //       message: "make more changes",
+    //       filesChanged: ["fileA.bin"],
+    //     });
+    //
+    //     shouldThrowLocksError(repo.errorLog, () => {
+    //       master.commit({
+    //         message: "Should throw error because changes made after revert."
+    //       })
+    //     });
+    //     // BROKEN: How to handle merges.
+    //   });
 
     run("Cherry-picking is supported, but isn't often something you should be doing. A cherry-pick duplicates work, " +
       "and loses the history of the commits. You're much better off sticking to a merge workflow if possible.",
@@ -678,14 +716,14 @@ around the gitgraph.js library. It validates commits with the same rules as the 
         repo.willNotMergeInto(master, stable);
         repo.willNotMergeInto(stable, master);
 
-        stable.commit({ filesChanged: [] });
+        stable.commit({filesChanged: [], divergent: true});
 
         var hotfix = stable.branch({
-          name: "hotfix"
+            name: "hotfix"
           }
         );
 
-        stable.commit({ filesChanged: [] });
+        stable.commit({filesChanged: []});
 
         hotfix.commit({
           message: "Hotfix issue on stable.",
