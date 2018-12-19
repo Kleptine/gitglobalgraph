@@ -1,0 +1,13 @@
+[package]
+name = "installer"
+version = "0.1.0"
+authors = ["John Austin <kleptine@gmail.com>"]
+
+[dependencies]
+client = {path = "../client"}
+log = "0.4"
+env_logger = "0.5.13"
+failure = "*"
+structopt = "0.2"
+git2 = "*"
+regex = "*"

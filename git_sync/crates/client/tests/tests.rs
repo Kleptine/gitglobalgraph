@@ -1,14 +1,12 @@
-extern crate simple_logger;
-
 #[macro_use]
 extern crate log;
 extern crate tempfile;
 extern crate git2;
 extern crate test_utilities;
-
+extern crate failure;
 
 use test_utilities::*;
-use std::error::Error;
+use failure::Error;
 use tempfile::Builder;
 use std::fs;
 use git2::Repository;
@@ -28,8 +26,8 @@ use std::collections::hash_map::RandomState;
 /// A simple test of the post-commit hook.
 /// The global graph should reflect the local commits after commiting.
 #[test]
-fn test_post_commit_hook() -> Result<(), Box<Error>> {
-    init_logging().unwrap();
+fn test_post_commit_hook() -> Result<(), Error> {
+    init_logging();
 
     create_hook_test(|local_repo, global_repo| {
         change_and_commit(local_repo, &[(&PathBuf::from("./filea.txt"), "new text a!")])?;
@@ -45,8 +43,8 @@ fn test_post_commit_hook() -> Result<(), Box<Error>> {
 
 /// The post commit hook should work fine if the branch reference moves around.
 #[test]
-fn test_post_commit_hook_reset_head() -> Result<(), Box<Error>> {
-    init_logging().unwrap();
+fn test_post_commit_hook_reset_head() -> Result<(), Error> {
+    init_logging();
 
     create_hook_test(|local_repo, global_repo| {
         change_and_commit(local_repo, &[(&PathBuf::from("./filea.txt"), "text a!")])?;
@@ -66,8 +64,8 @@ fn test_post_commit_hook_reset_head() -> Result<(), Box<Error>> {
 
 /// Doing a fast-forward merge should synchronize this client after the reference changes.
 #[test]
-fn test_merge_commit_sync_fastforward() -> Result<(), Box<Error>> {
-    init_logging().unwrap();
+fn test_merge_commit_sync_fastforward() -> Result<(), Error> {
+    init_logging();
 
     create_hook_test(|local_repo, global_repo| {
         change_and_commit(local_repo, &[(&PathBuf::from("./filea.txt"), "text a!")])?;
@@ -88,8 +86,8 @@ fn test_merge_commit_sync_fastforward() -> Result<(), Box<Error>> {
 
 /// Doing a merge should synchronize this client (after the new commit is created).
 #[test]
-fn test_merge_commit_sync() -> Result<(), Box<Error>> {
-    init_logging().unwrap();
+fn test_merge_commit_sync() -> Result<(), Error> {
+    init_logging();
 
     create_hook_test(|local_repo, global_repo| {
         change_and_commit(local_repo, &[(&PathBuf::from("./filea.txt"), "text a!")])?;
@@ -114,8 +112,8 @@ fn test_merge_commit_sync() -> Result<(), Box<Error>> {
 /// the branches file.
 #[ignore]
 #[test]
-fn test_rebase_sync() -> Result<(), Box<Error>> {
-    init_logging().unwrap();
+fn test_rebase_sync() -> Result<(), Error> {
+    init_logging();
 
     create_hook_test(|local_repo, global_repo| {
         change_and_commit(local_repo, &[(&PathBuf::from("./filea.txt"), "master a!")])?;
@@ -141,8 +139,8 @@ fn test_rebase_sync() -> Result<(), Box<Error>> {
 }
 
 /// Simple wrapper to create a couple of temporary repositories to run a test with.
-pub fn create_hook_test<F>(test_body: F) -> Result<(), Box<Error>>
-    where F: FnOnce(&Repository, &Repository) -> Result<(), Box<Error>>
+pub fn create_hook_test<F>(test_body: F) -> Result<(), Error>
+    where F: FnOnce(&Repository, &Repository) -> Result<(), Error>
 {
     // Create a directory inside of `std::env::temp_dir()`,
     // whose name will begin with 'example'.

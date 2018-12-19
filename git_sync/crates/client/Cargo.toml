@@ -24,6 +24,7 @@ name = "post-merge"
 path = "src/hooks/post_merge.rs"
 
 [dependencies]
+shared = {path = "../shared"}
 git2 = "0.7"
 log = "0.4"
 env_logger = "0.5.13"
@@ -32,9 +33,12 @@ regex = "1.0.5"
 uuid = { version = "0.7", features = ["v4"] }
 hostname = "^0.1"
 simple_logger = "0.5.0"
-nickel = "0.10.1"
+reqwest = "*"
+serde_json = "*"
+http = "*"
+url = "*"
+failure = "*"
 
 [dev-dependencies]
 simple_logger = "0.5.0"
 tempfile = "3"
-tests = { path = "../tests"}

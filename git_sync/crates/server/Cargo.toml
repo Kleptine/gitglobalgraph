@@ -3,15 +3,16 @@ name = "server"
 version = "0.1.0"
 authors = ["John Austin <kleptine@gmail.com>"]
 
-#[[bin]]
-#name = "start-server"
-#path = "server.rs"
+[[bin]]
+name = "start-server"
+path = "server.rs"
 
 [lib]
 name = "server"
 path = "server.rs"
 
 [dependencies]
+shared = {path = "../shared"}
 git2 = "0.7"
 bytes = "0.4"
 futures = "0.1"
@@ -26,6 +27,9 @@ actix-web = "^0.7"
 env_logger = "0.5.13"
 log = "*"
 simple_logger = "0.5.0"
+failure = "*"
+failure_derive = "*"
+structopt = "0.2"
 
 #tempfile = "3"
 #regex = "1.0.5"

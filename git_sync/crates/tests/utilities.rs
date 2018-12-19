@@ -1,4 +1,7 @@
-extern crate simple_logger;
+extern crate env_logger;
+
+#[macro_use]
+extern crate failure;
 
 #[macro_use]
 extern crate log;
@@ -7,7 +10,7 @@ extern crate git2;
 extern crate actix_web;
 extern crate server;
 
-use std::error::Error;
+
 use tempfile::Builder;
 use std::fs;
 use git2::Repository;
@@ -26,50 +29,97 @@ use std::collections::hash_map::RandomState;
 
 use actix_web::{test, http};
 
-static INIT_LOGGING: Once = ONCE_INIT;
-pub fn init_logging() -> Result<(), log::SetLoggerError> {
-    INIT_LOGGING.call_once(|| {
-        simple_logger::init_with_level(log::Level::Info).unwrap();
-    });
+use failure::Error;
+use failure::ResultExt;
+use std::process::Output;
+use std::fmt;
 
-    Ok(())
+static INIT_LOGGING: Once = ONCE_INIT;
+
+pub fn init_logging() {
+    INIT_LOGGING.call_once(|| {
+        let env = env_logger::Env::default()
+            .filter_or(env_logger::DEFAULT_FILTER_ENV, "debug");
+
+        env_logger::Builder::from_env(env)
+            .try_init().unwrap();
+    });
 }
 
+pub struct TestHarness<'a> {
+    pub local_repo_a: &'a Repository,
+    pub local_repo_b: &'a Repository,
+    pub origin_repo: &'a Repository,
+    pub global_graph: &'a Repository,
+    pub server: &'a mut test::TestServer,
+}
 
 /// Simple wrapper to create a couple of temporary repositories to run a test with.
-pub fn create_integration_test<F>(test_body: F) -> Result<(), Box<Error>>
-    where F: FnOnce(&Repository, &Repository, &mut test::TestServer) -> Result<(), Box<Error>>
+pub fn create_integration_test<F>(test_body: F) -> Result<(), Error>
+    where F: FnOnce(TestHarness) -> Result<(), Error>
 {
     // Create a directory inside of `std::env::temp_dir()`,
     // whose name will begin with 'example'.
     let test_dir = Builder::new().prefix("sync_server_test").tempdir()?;
 
-    let global_repo_path = test_dir.path().to_owned().join("global");
+    // Create a work directory for the server
+    let server_work_dir = test_dir.path().to_owned().join("server");
+    fs::create_dir(&server_work_dir)?;
+
     let locala_repo_path = test_dir.path().to_owned().join("local_a");
-    fs::create_dir(&global_repo_path)?;
+    let localb_repo_path = test_dir.path().to_owned().join("local_b");
+    let origin_repo_path = test_dir.path().to_owned().join("origin");
     fs::create_dir(&locala_repo_path)?;
+    fs::create_dir(&localb_repo_path)?;
+    fs::create_dir(&origin_repo_path)?;
 
-    debug!("Creating global repo at {:?}", global_repo_path);
-    debug!("Creating a local repo at {:?}", locala_repo_path);
+    debug!("Creating Global Graph server with working directory: {:?}", server_work_dir);
+    let origin_repo = Repository::init_bare(&origin_repo_path)?;
 
-    let global_repo = Repository::init_bare(&global_repo_path)?;
+    debug!("Starting global graph server.");
+    let mut srv = test::TestServer::with_factory(server::create_server_factory(&server_work_dir)?);
+    let server_url = srv.url("");
+
+    debug!("Creating a local repo A at {:?}", locala_repo_path);
     let locala_repo = Repository::init(&locala_repo_path)?;
     install_all_hooks(&locala_repo)?;
 
+    let global_repo_path = server_work_dir.join("repo");
+    let global_repo_url = PathBuf::from("file://".to_string()).join(server_work_dir.join("repo"));
+    let origin_repo_url = PathBuf::from("file://".to_string()).join(&origin_repo_path);
+    git_cmd(&locala_repo, &["remote", "add", "sync_server", &global_repo_url.clone().to_string_lossy()])?;
+    git_cmd(&locala_repo, &["remote", "add", "origin", &origin_repo_url.clone().to_string_lossy()])?;
+    git_cmd(&locala_repo, &["config", "user.name", "Test User A"])?;
+    git_cmd(&locala_repo, &["config", "globalgraph.server", &server_url])?;
 
-    git_cmd(&locala_repo, &["remote", "add", "sync_server", &global_repo_path.clone().to_string_lossy()])?;
-    git_cmd(&locala_repo, &["config", "user.name", "Test User"])?;
+    debug!("Creating an origin repo at {:?}", &origin_repo_path);
+    let global_repo = Repository::init_bare(&global_repo_path)?;
 
-    debug!("Starting global graph server.");
-    let mut srv = test::TestServer::with_factory(server::create_server_factory(&PathBuf::from("")));
+    debug!("Making one commit to start.");
+    change_and_commit(&locala_repo, &[(&PathBuf::from("./Readme.md"), "Initial commit")])?;
+    git_cmd(&locala_repo, &["push", "origin", "master"])?;
+
+    debug!("Cloning a local repo B from origin at {:?}", localb_repo_path);
+    Repository::clone(&origin_repo_url.to_string_lossy(), &localb_repo_path)?;
+    let localb_repo = Repository::init(&localb_repo_path)?;
+    install_all_hooks(&localb_repo)?;
+
+    git_cmd(&localb_repo, &["remote", "add", "sync_server", &global_repo_url.clone().to_string_lossy()])?;
+    git_cmd(&localb_repo, &["config", "user.name", "Test User B"])?;
+    git_cmd(&localb_repo, &["config", "globalgraph.server", &server_url])?;
 
     trace!("Starting test.");
-    test_body(&locala_repo, &global_repo, &mut srv)
+    test_body(TestHarness {
+        local_repo_a: &locala_repo,
+        local_repo_b: &localb_repo,
+        origin_repo: &origin_repo,
+        global_graph: &global_repo,
+        server: &mut srv,
+    })
 }
 
 
-pub trait RepositoryExtensions {
-
+pub trait RepositoryTestExtensions {
     /// Gets the total number of commits in the repository.
     fn total_commits(&self) -> Result<usize, git2::Error>;
 
@@ -80,35 +130,7 @@ pub trait RepositoryExtensions {
 }
 
 
-impl RepositoryExtensions for Repository {
-    fn all_commits(&self) -> Result<HashSet<git2::Oid>, git2::Error> {
-        let odb = self.odb()?;
-        // NOTE(john): This is not performant enough for large repos.
-        let mut commits : HashSet<git2::Oid> = HashSet::new();
-
-        odb.foreach(|oid| -> bool {
-            let object = odb.read(oid.clone());
-            match object {
-                Ok(object) => {
-                    match object.kind() {
-                        ObjectType::Commit => {
-                            commits.insert(oid.clone());
-                        }
-                        _ => {}
-                    }
-                }
-                Err(e) => {
-                    error!("{}", e);
-                    return false;
-                }
-            }
-
-            return true;
-        })?;
-
-        return Ok(commits);
-
-    }
+impl RepositoryTestExtensions for Repository {
     fn total_commits(&self) -> Result<usize, git2::Error> {
         let mut count: usize = 0;
         let odb = self.odb()?;
@@ -147,11 +169,39 @@ impl RepositoryExtensions for Repository {
 
         return Ok(revwalk.into_iter().count());
     }
+
+    fn all_commits(&self) -> Result<HashSet<git2::Oid>, git2::Error> {
+        let odb = self.odb()?;
+        // NOTE(john): This is not performant enough for large repos.
+        let mut commits: HashSet<git2::Oid> = HashSet::new();
+
+        odb.foreach(|oid| -> bool {
+            let object = odb.read(oid.clone());
+            match object {
+                Ok(object) => {
+                    match object.kind() {
+                        ObjectType::Commit => {
+                            commits.insert(oid.clone());
+                        }
+                        _ => {}
+                    }
+                }
+                Err(e) => {
+                    error!("{}", e);
+                    return false;
+                }
+            }
+
+            return true;
+        })?;
+
+        return Ok(commits);
+    }
 }
 
 /// Installs all git-sync hooks to a git repository for a test.
 #[cfg(windows)]
-pub fn install_all_hooks(repo: &Repository) -> Result<(), Box<Error>> {
+pub fn install_all_hooks(repo: &Repository) -> Result<(), Error> {
     debug!("Installing hooks to [{:?}]", repo.path());
 
     let hooks_dir = repo.path().join(r"hooks\");
@@ -164,7 +214,7 @@ pub fn install_all_hooks(repo: &Repository) -> Result<(), Box<Error>> {
 }
 
 #[cfg(windows)]
-pub fn install_hook<P: AsRef<Path>>(hooks_dir: P, hook_name: &str) -> Result<(), Box<Error>> {
+pub fn install_hook<P: AsRef<Path>>(hooks_dir: P, hook_name: &str) -> Result<(), Error> {
     let hooks_dir = hooks_dir.as_ref();
 
     if !hooks_dir.exists() {
@@ -176,14 +226,28 @@ pub fn install_hook<P: AsRef<Path>>(hooks_dir: P, hook_name: &str) -> Result<(),
 
     trace!("Copying [{:?}] to [{:?}]", &hook_src, &hook_dst);
     fs::copy(&hook_src, &hook_dst)
-        .map_err(|e| format!("Couldn't install [[{}] hook. ", hook_name) + e.description())?;
+        .context(format!("Couldn't install [[{}] hook. ", hook_name))?;
 
     Ok(())
 }
 
+#[derive(Fail, Debug)]
+pub struct CommandError {
+    pub output: Output,
+}
+
+impl fmt::Display for CommandError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "A sub-command failed with the status code [{}]. stdout: \n[{}], stderr: \n[{}]",
+                          self.output.status,
+                          String::from_utf8_lossy(&self.output.stdout),
+                          String::from_utf8_lossy(&self.output.stderr))
+    }
+}
+
 /// Runs a git command with the embedded git binary. For testing only.
 #[must_use]
-pub fn git_cmd(repo: &Repository, arguments: &[&str]) -> Result<(), Box<Error>> {
+pub fn git_cmd(repo: &Repository, arguments: &[&str]) -> Result<(), CommandError> {
     // Locate the proper git command
     let cmd = git_cmd_path();
 
@@ -196,16 +260,23 @@ pub fn git_cmd(repo: &Repository, arguments: &[&str]) -> Result<(), Box<Error>> 
     let output = cmd_to_run.output()
         .expect("Couldn't find git cli executable. Needed to run tests.");
 
-    trace!("STDOUT:\n{}", String::from_utf8_lossy(&output.stdout));
+    // stdout and stderr are the places where logging from the postcommit hooks come from.
+    if !&output.stdout.is_empty() {
+        trace!("Output (STDOUT):\n{}", String::from_utf8_lossy(&output.stdout));
+    }
     if !&output.stderr.is_empty() {
-        debug!("STDERR:\n{}", String::from_utf8_lossy(&output.stderr));
+        trace!("Output (STDERR):\n{}", String::from_utf8_lossy(&output.stderr));
     }
 
     if output.status.success() {
         return Ok(());
     } else {
-        error!("Git command [{:?}] failed with stderr:\n {}", arguments, String::from_utf8_lossy(&output.stderr));
-        return Err(Box::from(format!("Git command [{:?}] failed with message: {}", arguments, String::from_utf8_lossy(&output.stderr))));
+        error!("Git command [{:?}] failed.", arguments);
+        error!("Git command stdout:\n{}", String::from_utf8_lossy(&output.stdout));
+        error!("::::::::::::::::::::::::::::::::::");
+        error!("Git command stderr:\n{}", String::from_utf8_lossy(&output.stderr));
+        error!("::::::::::::::::::::::::::::::::::");
+        return Err(CommandError { output: output.clone() });
     }
 }
 
@@ -215,7 +286,7 @@ fn git_cmd_path() -> PathBuf {
     return PathBuf::from(env!("CARGO_MANIFEST_DIR").to_owned()).join(r"..\..\git_bin\win\bin\git.exe");
 }
 
-pub fn change_and_commit<P: AsRef<Path>>(repo: &Repository, changes: &[(P, &str)]) -> Result<(), Box<Error>> {
+pub fn change_and_commit<P: AsRef<Path>>(repo: &Repository, changes: &[(P, &str)]) -> Result<(), Error> {
     for &(ref file, ref text) in changes {
         let filepath = repo.workdir().unwrap().join(file);
         trace!("Making a change to file [{:?}] with contents [{:?}]", filepath, text);
