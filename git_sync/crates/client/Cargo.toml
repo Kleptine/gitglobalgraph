@@ -2,6 +2,7 @@
 name = "client"
 version = "0.1.0"
 authors = ["John Austin <kleptine@gmail.com>"]
+edition = "2018"
 
 [lib]
 name = "client"
@@ -27,18 +28,19 @@ path = "src/hooks/post_merge.rs"
 shared = {path = "../shared"}
 git2 = "0.7"
 log = "0.4"
-env_logger = "0.5.13"
+#env_logger = { version = "~0.6", default-features = false }
 tempfile = "3"
 regex = "1.0.5"
 uuid = { version = "0.7", features = ["v4"] }
 hostname = "^0.1"
-simple_logger = "0.5.0"
 reqwest = "*"
 serde_json = "*"
 http = "*"
 url = "*"
 failure = "*"
+simple_logger = "0.5.0"
 
 [dev-dependencies]
-simple_logger = "0.5.0"
+#env_logger = { version = "~0.6", default-features = false }
+#simple_logger = "0.5.0"
 tempfile = "3"

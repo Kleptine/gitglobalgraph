@@ -1,21 +1,4 @@
 //! Shared functionality between the git-sync hooks client and server.
-
-#[macro_use]
-extern crate log;
-
-#[macro_use]
-extern crate serde_derive;
-
-#[macro_use]
-extern crate failure;
-
-extern crate env_logger;
-extern crate git2;
-extern crate regex;
-extern crate uuid;
-extern crate hostname;
-
-
 use git2::Repository;
 use git2::BranchType;
 use git2::ErrorCode;
@@ -27,8 +10,9 @@ use std::fmt;
 use std::cmp::PartialEq;
 use failure::Error;
 use failure::ResultExt;
+use failure::format_err;
 use git2::Reference;
-
+use serde_derive::{Deserialize, Serialize};
 
 // The full commit sha, as a string.
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
@@ -52,7 +36,6 @@ impl fmt::Display for CommitSha {
         write!(f, "{}", self.0)
     }
 }
-
 
 /// The name of a branch, often called the 'friendly name'.
 /// Ex: for the branch full path: [refs/heads/mynamespace/mybranch], the Branch Name

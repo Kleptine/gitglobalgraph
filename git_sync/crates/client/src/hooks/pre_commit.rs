@@ -39,7 +39,8 @@ fn main_internal() -> Result<bool, Error> {
     info!("[Global Graph]: Checking for conflicts in the Global Graph.");
     let repo = Repository::open(env::current_dir()?)?;
     let global_graph_url = repo.config()?.get_string("globalgraph.server")
-        .context("The local git config value 'globalgraph.server' is missing or invalid. Set it to your global graph server url.")?;
+        .context("The local git config value 'globalgraph.server' is missing or invalid. \
+        Set it to your global graph query server url.")?;
     let host_url = Url::parse(&global_graph_url)
         .context(format!("The local git config value 'globalgraph.server' is not a valid url: [{}]", &global_graph_url))?;
 
@@ -51,20 +52,14 @@ fn main_internal() -> Result<bool, Error> {
         .context("The local git config value 'globalgraph.repouuid' is missing or invalid.")?;
 
 
-    // let head_state = if repo.head_detached()? {
-    //     Detached
-    // } else {
-    //     OnBranch(repo.head()?.name().ok_or("The current git HEAD has an invalid reference name."));
-    // };
-
     // TODO(john): Get the file names by running: git status --porcelain
 
     // TODO (john): Verify a number of cases:
     //      - Renamed files should check both the source and destination paths for conflicts.
     //      - Symlinks work as expected, and only trigger conflicts if the link changes (not what it points at)
     //      - Unchanged, but touched files shouldn't show up here.
-    // Get a list of the files the client has changed.
 
+    // Get a list of the files the client has changed.
     let mut modified_paths: Vec<GitPath> = vec!();
 
     for entry in repo.statuses(None)?.iter()

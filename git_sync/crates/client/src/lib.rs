@@ -1,23 +1,8 @@
-#[macro_use]
-extern crate log;
-
-#[macro_use]
-extern crate failure;
-
-extern crate env_logger;
-extern crate git2;
-extern crate regex;
-extern crate uuid;
-extern crate hostname;
-extern crate shared;
-
-
 use git2::Repository;
 use git2::BranchType;
 use git2::ErrorCode;
 use std::sync::{Once, ONCE_INIT};
 use log::LevelFilter;
-use env_logger::Builder;
 use std::path::Path;
 use regex::Regex;
 use uuid::Uuid;
@@ -26,6 +11,9 @@ use shared::ClientSyncConfig;
 use shared::ReferencePath;
 use failure::Error;
 use failure::ResultExt;
+use log::{debug, trace, info};
+use failure::format_err;
+use log::Level;
 
 /// Given a path to a repository on the local file system, synchronizes this repository as a
 /// client on the sync server.
@@ -118,10 +106,11 @@ static INIT_LOGGING: Once = ONCE_INIT;
 
 pub fn init_logging() {
     INIT_LOGGING.call_once(|| {
-        let env = env_logger::Env::default()
-            .filter_or(env_logger::DEFAULT_FILTER_ENV, "debug");
-
-        env_logger::Builder::from_env(env)
-            .init();
+        simple_logger::init_with_level(Level::Trace).unwrap();
+//        let env = env_logger::Env::default()
+//            .filter_or(env_logger::DEFAULT_FILTER_ENV, "trace");
+//
+//        env_logger::Builder::from_env(env)
+//            .init();
     })
 }

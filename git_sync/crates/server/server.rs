@@ -237,7 +237,7 @@ struct Opt {
     /// temporary files.
     ///
     /// ex: ./   ./workdir/
-    #[structopt(long="work_dir")]
+    #[structopt(long="work_dir", parse(from_os_str))]
     work_directory: PathBuf,
 }
 
@@ -256,12 +256,12 @@ fn main() -> Result<(), Error> {
     // Setup the global graph repo if it doesn't already exist.
     let global_graph_repo = args.work_directory.join("repo");
     if global_graph_repo.exists() {
-        info!("Loading existing Global Graph repository: [{:?}].", &global_graph_repo);
+        info!("Loading existing Global Graph repository: [{:?}].", &global_graph_repo.to_string_lossy());
         let repo = Repository::open(&global_graph_repo)
-            .context(format!("The path [{}] was not a valid git repository.", args.git_directory.to_string_lossy()))?;
+            .context(format!("The path [{}] was not a valid git repository.", global_graph_repo.to_string_lossy()))?;
 
         if !repo.is_bare() {
-            return Err(format_err!("The Global Graph repository [{}] must be a bare repository.", args.git_directory.to_string_lossy()));
+            return Err(format_err!("The Global Graph repository [{}] must be a bare repository.", global_graph_repo.to_string_lossy()));
         }
     } else {
         info!("No existing Global Graph repo found, creating new one at [{:?}].", &global_graph_repo);

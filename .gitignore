@@ -7,3 +7,4 @@ GitLocks/GitLocks.Tests/obj/
 GitLocks/GitLocks.Tests/bin/
 GitLocks/.vs/
 git_sync/target/
+git_sync/.vscode/

@@ -35,8 +35,8 @@ fn single_push() -> Result<(), Error> {
     init_logging();
 
     create_integration_test(|harness| {
-        change_and_commit(harness.local_repo_a, &[(&PathBuf::from("./filea.txt"), "new text a!")])?;
-        change_and_commit(harness.local_repo_a, &[(&PathBuf::from("./fileb.txt"), "new text b!")])?;
+        change_and_commit(harness.local_repo_a, &[(&PathBuf::from("./filea.bin"), "new text a!")])?;
+        change_and_commit(harness.local_repo_a, &[(&PathBuf::from("./fileb.bin"), "new text b!")])?;
 
         // Verify that the post-commit hooks properly pushed to the server.
         assert_eq!(harness.global_graph.branches(None)?.count(), 1);
@@ -53,7 +53,7 @@ fn synchronize_after_clone() -> Result<(), Error> {
     init_logging();
 
     create_integration_test(|harness| {
-        change_and_commit(harness.local_repo_b, &[(&PathBuf::from("./testfile.txt"), "new test")])?;
+        change_and_commit(harness.local_repo_b, &[(&PathBuf::from("./testfile.bin"), "new test")])?;
 
         let uuid = harness.local_repo_b.config()?.get_string("globalgraph.repouuid")?;
         assert!(harness.global_graph.find_branch(&format!("{}/master", uuid), BranchType::Local).is_ok());
@@ -68,19 +68,19 @@ fn has_conflict_standard() -> Result<(), Error> {
     init_logging();
 
     create_integration_test(|harness| {
-        change_and_commit(harness.local_repo_a, &[(&PathBuf::from("./filea.txt"), "new text a!")])?;
-        change_and_commit(harness.local_repo_b, &[(&PathBuf::from("./file_other.txt"), "new text a!")])?;
+        change_and_commit(harness.local_repo_a, &[(&PathBuf::from("./filea.bin"), "new text a!")])?;
+        change_and_commit(harness.local_repo_b, &[(&PathBuf::from("./file_other.bin"), "new text a!")])?;
 
         let uuid_b = harness.local_repo_b.config()?.get_string("globalgraph.repouuid")?;
         let uuid_a = harness.local_repo_a.config()?.get_string("globalgraph.repouuid")?;
 
         let request = shared::ConflictsAfterCommitRequest {
             repo_uuid: uuid_b,
-            files: vec![GitPath::new("filea.txt")],
+            files: vec![GitPath::new("filea.bin")],
             repo_head_commit: Some(CommitSha::new(&harness.local_repo_b.head()?.peel_to_commit()?.id().to_string())),
         };
 
-        // When attempting to commit a change to filea.txt on repo b, there should be a conflict at the head of 
+        // When attempting to commit a change to filea.bin on repo b, there should be a conflict at the head of
         // repo A.
         let response = make_conflicts_after_commit_request(harness.server, &request);
         let repo_a_head = CommitSha::new(&harness.local_repo_a.head()?.peel_to_commit()?.id().to_string());
@@ -88,7 +88,7 @@ fn has_conflict_standard() -> Result<(), Error> {
             response,
             serde_json::to_value(shared::ConflictsAfterCommitResponse {
                 conflicts: vec!(shared::UnintegratedChange {
-                    file: GitPath::new("filea.txt"),
+                    file: GitPath::new("filea.bin"),
                     commit: repo_a_head,
                     branch: ReferencePath("refs/heads/master".into()),
                     repo_uuid: uuid_a,
@@ -106,12 +106,12 @@ fn has_conflict_hooks_only() -> Result<(), Error> {
     init_logging();
 
     create_integration_test(|harness| {
-        // Change filea.txt in local_repo_a.
-        change_and_commit(harness.local_repo_a, &[(&PathBuf::from("./filea.txt"), "some text in a")])?;
-        change_and_commit(harness.local_repo_b, &[(&PathBuf::from("./file_other.txt"), "some other text")])?;
+        // Change filea.bin in local_repo_a.
+        change_and_commit(harness.local_repo_a, &[(&PathBuf::from("./filea.bin"), "some text in a")])?;
+        change_and_commit(harness.local_repo_b, &[(&PathBuf::from("./file_other.bin"), "some other text")])?;
 
-        // Modifying filea.txt in local_repo_b should fail, now.
-        let result = change_and_commit(harness.local_repo_b, &[(&PathBuf::from("./filea.txt"), "conflicting text in a")]);
+        // Modifying filea.bin in local_repo_b should fail, now.
+        let result = change_and_commit(harness.local_repo_b, &[(&PathBuf::from("./filea.bin"), "conflicting text in a")]);
         match result {
             Ok(_) => panic!("Local repo b should have returned an error when trying to commit."),
             Err(e) => assert!(String::from_utf8_lossy(&e.downcast::<CommandError>()?.output.stderr).contains("Exiting with status: [2]"))
@@ -128,15 +128,15 @@ fn detached_head_conflict() -> Result<(), Error> {
     init_logging();
 
     create_integration_test(|harness| {
-        // Change filea.txt in local_repo_a.
-        change_and_commit(harness.local_repo_a, &[(&PathBuf::from("./filea.txt"), "some text in a")])?;
-        change_and_commit(harness.local_repo_b, &[(&PathBuf::from("./file_other.txt"), "some other text")])?;
+        // Change filea.bin in local_repo_a.
+        change_and_commit(harness.local_repo_a, &[(&PathBuf::from("./filea.bin"), "some text in a")])?;
+        change_and_commit(harness.local_repo_b, &[(&PathBuf::from("./file_other.bin"), "some other text")])?;
 
         git_cmd(harness.local_repo_b, &["checkout", "HEAD^"])?;
         assert!(harness.local_repo_b.head_detached()?);
 
-        // Modifying filea.txt in local_repo_b should fail, now.
-        let result = change_and_commit(harness.local_repo_b, &[(&PathBuf::from("./filea.txt"), "conflicting text in a")]);
+        // Modifying filea.bin in local_repo_b should fail, now.
+        let result = change_and_commit(harness.local_repo_b, &[(&PathBuf::from("./filea.bin"), "conflicting text in a")]);
         match result {
             Ok(_) => panic!("Local repo b should have returned an error when trying to commit."),
             Err(e) => assert!(String::from_utf8_lossy(&e.downcast::<CommandError>()?.output.stderr).contains("Exiting with status: [2]"))
@@ -152,14 +152,14 @@ fn no_conflicts() -> Result<(), Error> {
     init_logging();
 
     create_integration_test(|harness| {
-        change_and_commit(harness.local_repo_a, &[(&PathBuf::from("./filea.txt"), "new text a!")])?;
-        change_and_commit(harness.local_repo_b, &[(&PathBuf::from("./file_other.txt"), "new text a!")])?;
+        change_and_commit(harness.local_repo_a, &[(&PathBuf::from("./filea.bin"), "new text a!")])?;
+        change_and_commit(harness.local_repo_b, &[(&PathBuf::from("./file_other.bin"), "new text a!")])?;
 
         // Verify that the server returns the correct result.
         let uuid = harness.local_repo_b.config()?.get_string("globalgraph.repouuid")?;
         let request = shared::ConflictsAfterCommitRequest {
             repo_uuid: uuid,
-            files: vec![GitPath::new("./filea.txt")],
+            files: vec![GitPath::new("./filea.bin")],
             repo_head_commit: Some(CommitSha::new(&harness.local_repo_b.head()?.peel_to_commit()?.id().to_string())),
         };
         let response = make_conflicts_after_commit_request(harness.server, &request);
@@ -189,6 +189,19 @@ fn bad_data() -> Result<(), Error> {
 
         let response = harness.server.execute(request.send()).unwrap();
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+        return Ok(());
+    })
+}
+
+/// Modifying files that are not 'lockable' should work like normal.
+#[test]
+fn not_lockable_files() -> Result<(), Error> {
+    init_logging();
+
+    create_integration_test(|harness| {
+        change_and_commit(harness.local_repo_a, &[(&PathBuf::from("./filea.txt"), "Change mergeable file.")])?;
+        change_and_commit(harness.local_repo_b, &[(&PathBuf::from("./filea.txt"), "Other change.")])?;
 
         return Ok(());
     })
