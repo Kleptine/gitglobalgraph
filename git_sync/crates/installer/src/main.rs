@@ -1,15 +1,6 @@
-#[macro_use]
-extern crate log;
-
-#[macro_use]
-extern crate failure;
-
-#[macro_use]
-extern crate structopt;
-
-extern crate git2;
-extern crate regex;
-extern crate env_logger;
+//! The installer for the Global Graph client. Standalone as an executable.
+//!
+//! The executable files for the installed git commit hooks are included in this installer via rust's `include_bytes`.
 
 use failure::Error;
 use structopt::StructOpt;
@@ -20,8 +11,10 @@ use std::fs;
 use std::io;
 use std::io::BufRead;
 use regex::Regex;
+use log::{info};
+use failure::format_err;
 
-
+/// The options provided on the command line.
 #[derive(StructOpt, Debug)]
 #[structopt(name = "globalgraph-configure")]
 struct Opt {
@@ -61,6 +54,7 @@ struct Opt {
     conflicts_detection: bool,
 }
 
+/// Entry point. Installs the GlobalGraph client to the computer.
 fn main() -> Result<(), Error> {
     let env = env_logger::Env::default()
         .filter_or(env_logger::DEFAULT_FILTER_ENV, "info");

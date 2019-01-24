@@ -1,18 +1,18 @@
 //! Shared functionality between the git-sync hooks client and server.
+
 use git2::Repository;
-use git2::BranchType;
-use git2::ErrorCode;
 use regex::Regex;
 use uuid::Uuid;
 use hostname::get_hostname;
 use std::ops::Deref;
 use std::fmt;
-use std::cmp::PartialEq;
 use failure::Error;
 use failure::ResultExt;
 use failure::format_err;
 use git2::Reference;
 use serde_derive::{Deserialize, Serialize};
+
+pub const GLOBALGRAPH_REPO_NAME: &str = "globalgraph";
 
 // The full commit sha, as a string.
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]

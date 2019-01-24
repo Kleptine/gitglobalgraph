@@ -26,7 +26,7 @@ path = "src/hooks/post_merge.rs"
 
 [dependencies]
 shared = {path = "../shared"}
-git2 = "0.7"
+git2 = {git = "https://github.com/Kleptine/git2-rs.git" }
 log = "0.4"
 #env_logger = { version = "~0.6", default-features = false }
 tempfile = "3"

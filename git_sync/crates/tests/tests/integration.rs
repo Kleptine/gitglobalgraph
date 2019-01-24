@@ -1,20 +1,7 @@
-extern crate test_utilities;
-extern crate actix_web;
-extern crate serde_json;
-extern crate server;
-extern crate client;
-
-extern crate failure;
-
-#[macro_use]
-extern crate json;
-extern crate shared;
-extern crate git2;
-
 use test_utilities::*;
 use std::path::PathBuf;
 use actix_web::http;
-use http::StatusCode;
+use crate::http::StatusCode;
 use actix_web::{HttpRequest, HttpMessage};
 use actix_web::test::TestServer;
 use std::str;
@@ -23,6 +10,7 @@ use serde_json::value::Value;
 use shared::GitPath;
 use shared::ReferencePath;
 use shared::CommitSha;
+use json::object;
 
 use failure::Error;
 use failure::ResultExt;
@@ -194,7 +182,7 @@ fn bad_data() -> Result<(), Error> {
     })
 }
 
-/// Modifying files that are not 'lockable' should work like normal.
+/// Commit checks should only apply to files with the "lockable" attribute set.
 #[test]
 fn not_lockable_files() -> Result<(), Error> {
     init_logging();
@@ -202,6 +190,13 @@ fn not_lockable_files() -> Result<(), Error> {
     create_integration_test(|harness| {
         change_and_commit(harness.local_repo_a, &[(&PathBuf::from("./filea.txt"), "Change mergeable file.")])?;
         change_and_commit(harness.local_repo_b, &[(&PathBuf::from("./filea.txt"), "Other change.")])?;
+
+        change_and_commit(harness.local_repo_a, &[(&PathBuf::from("./filea.bin"), "Change locked file.")])?;
+        let result = change_and_commit(harness.local_repo_b, &[(&PathBuf::from("./filea.bin"), "Change it again, bad!")]);
+        match result {
+            Ok(_) => panic!("Local repo b should have returned an error when trying to commit."),
+            Err(e) => assert!(String::from_utf8_lossy(&e.downcast::<CommandError>()?.output.stderr).contains("Exiting with status: [2]"))
+        }
 
         return Ok(());
     })

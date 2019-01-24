@@ -83,7 +83,7 @@ fn create_repo_test<F>(test_body: F) -> Result<(), failure::Error>
 {
     // Create a directory inside of `std::env::temp_dir()`,
     // whose name will begin with 'example'.
-    let test_dir = Builder::new().prefix("sync_server_test").tempdir()?;
+    let test_dir = Builder::new().prefix(shared::GLOBALGRAPH_REPO_NAME).tempdir()?;
 
     let global_repo_path = test_dir.path().to_owned().join("global");
     let locala_repo_path = test_dir.path().to_owned().join("local_a");
@@ -97,7 +97,7 @@ fn create_repo_test<F>(test_body: F) -> Result<(), failure::Error>
     let locala_repo = Repository::init(&locala_repo_path)?;
     install_all_hooks(&locala_repo)?;
 
-    git_cmd(&locala_repo, &["remote", "add", "sync_server", &global_repo_path.clone().to_string_lossy()])?;
+    git_cmd(&locala_repo, &["remote", "add", shared::GLOBALGRAPH_REPO_NAME, &global_repo_path.clone().to_string_lossy()])?;
     git_cmd(&locala_repo, &["config", "user.name", "Test User"])?;
 
     test_body(&locala_repo, &global_repo)

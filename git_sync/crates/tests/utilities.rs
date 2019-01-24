@@ -1,33 +1,17 @@
-extern crate env_logger;
-
-#[macro_use]
-extern crate failure;
-
-#[macro_use]
-extern crate log;
-extern crate tempfile;
-extern crate git2;
-extern crate actix_web;
-extern crate server;
-
-
 use tempfile::Builder;
 use std::fs;
 use git2::Repository;
 use std::process::Command;
 use std::path::Path;
 use std::path::PathBuf;
-use git2::Branch;
-use git2::BranchType;
 use git2::ObjectType;
-use std::env;
 use std::sync::{Once, ONCE_INIT};
 use std::collections::HashSet;
-use std::iter::FromIterator;
+use log::{error, trace, debug};
+use log::Level;
+use failure::Fail;
 
-use std::collections::hash_map::RandomState;
-
-use actix_web::{test, http};
+use actix_web::{test};
 
 use failure::Error;
 use failure::ResultExt;
@@ -38,11 +22,7 @@ static INIT_LOGGING: Once = ONCE_INIT;
 
 pub fn init_logging() {
     INIT_LOGGING.call_once(|| {
-        let env = env_logger::Env::default()
-            .filter_or(env_logger::DEFAULT_FILTER_ENV, "debug");
-
-        env_logger::Builder::from_env(env)
-            .try_init().unwrap();
+        simple_logger::init_with_level(Level::Info).unwrap();
     });
 }
 
@@ -60,7 +40,7 @@ pub fn create_integration_test<F>(test_body: F) -> Result<(), Error>
 {
     // Create a directory inside of `std::env::temp_dir()`,
     // whose name will begin with 'example'.
-    let test_dir = Builder::new().prefix("sync_server_test").tempdir()?;
+    let test_dir = Builder::new().prefix(shared::GLOBALGRAPH_REPO_NAME).tempdir()?;
 
     // Create a work directory for the server
     let server_work_dir = test_dir.path().to_owned().join("server");
@@ -80,14 +60,14 @@ pub fn create_integration_test<F>(test_body: F) -> Result<(), Error>
     let mut srv = test::TestServer::with_factory(server::create_server_factory(&server_work_dir)?);
     let server_url = srv.url("");
 
-    debug!("Creating a local repo A at {:?}", locala_repo_path);
+    debug!("Cloning a Local Repo A at {:?}", locala_repo_path);
     let locala_repo = Repository::init(&locala_repo_path)?;
     install_all_hooks(&locala_repo)?;
 
     let global_repo_path = server_work_dir.join("repo");
     let global_repo_url = PathBuf::from("file://".to_string()).join(server_work_dir.join("repo"));
     let origin_repo_url = PathBuf::from("file://".to_string()).join(&origin_repo_path);
-    git_cmd(&locala_repo, &["remote", "add", "sync_server", &global_repo_url.clone().to_string_lossy()])?;
+    git_cmd(&locala_repo, &["remote", "add", shared::GLOBALGRAPH_REPO_NAME, &global_repo_url.clone().to_string_lossy()])?;
     git_cmd(&locala_repo, &["remote", "add", "origin", &origin_repo_url.clone().to_string_lossy()])?;
     git_cmd(&locala_repo, &["config", "user.name", "Test User A"])?;
     git_cmd(&locala_repo, &["config", "globalgraph.server", &server_url])?;
@@ -95,16 +75,19 @@ pub fn create_integration_test<F>(test_body: F) -> Result<(), Error>
     debug!("Creating an origin repo at {:?}", &origin_repo_path);
     let global_repo = Repository::init_bare(&global_repo_path)?;
 
-    debug!("Making one commit to start.");
+    debug!("Setting up initial files and commits in the repository.");
     change_and_commit(&locala_repo, &[(&PathBuf::from("./Readme.md"), "Initial commit")])?;
+    change_and_commit(&locala_repo, &[(&PathBuf::from("./.gitattributes"),
+        "*.bin lockable"
+    )])?;
+    debug!("Pushing initial commits to origin.");
     git_cmd(&locala_repo, &["push", "origin", "master"])?;
 
     debug!("Cloning a local repo B from origin at {:?}", localb_repo_path);
-    Repository::clone(&origin_repo_url.to_string_lossy(), &localb_repo_path)?;
-    let localb_repo = Repository::init(&localb_repo_path)?;
+    let localb_repo = Repository::clone(&origin_repo_url.to_string_lossy(), &localb_repo_path)?;
     install_all_hooks(&localb_repo)?;
 
-    git_cmd(&localb_repo, &["remote", "add", "sync_server", &global_repo_url.clone().to_string_lossy()])?;
+    git_cmd(&localb_repo, &["remote", "add", shared::GLOBALGRAPH_REPO_NAME, &global_repo_url.clone().to_string_lossy()])?;
     git_cmd(&localb_repo, &["config", "user.name", "Test User B"])?;
     git_cmd(&localb_repo, &["config", "globalgraph.server", &server_url])?;
 

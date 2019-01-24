@@ -1,37 +1,10 @@
-#[macro_use]
-extern crate log;
-#[macro_use]
-extern crate failure;
-#[macro_use]
-extern crate failure_derive;
-#[macro_use]
-extern crate serde_derive;
-#[macro_use]
-extern crate json;
-#[macro_use]
-extern crate structopt;
-
-extern crate actix;
-extern crate actix_web;
-extern crate bytes;
-extern crate env_logger;
-extern crate futures;
-extern crate serde_json;
-extern crate git2;
-
-
-extern crate shared;
-
 use actix_web::{
-    error, http, middleware, server, App, AsyncResponder, HttpMessage,
-    HttpRequest, HttpResponse, Json,
+    http, middleware, server, App, AsyncResponder, HttpMessage,
+    HttpRequest, HttpResponse
 };
 
-use bytes::BytesMut;
-use futures::{Future, Stream};
-use json::JsonValue;
-use std::path::Path;
-use std::ops::Deref;
+use log::{debug, info};
+use futures::{Future};
 use git2::Branch;
 use git2::Repository;
 use std::path::PathBuf;
@@ -43,6 +16,8 @@ use shared::*;
 use git2::Commit;
 use git2::Oid;
 use structopt::StructOpt;
+use failure::format_err;
+
 
 pub struct AppState {
     work_directory: PathBuf,
@@ -54,7 +29,8 @@ pub struct InfoResponse {
 }
 
 /// Returns all branches in the global graph that can conflict with the given branch.
-fn get_conflicting_branches<'repo>(global_graph: &'repo Repository, target_head: &HeadCommit) -> Result<Vec<Branch<'repo>>, Error> {
+/// TODO(john): Currently all branches conflict with all other branches. Waiting on divergence.
+fn get_conflicting_branches<'repo>(global_graph: &'repo Repository, _target_head: &HeadCommit) -> Result<Vec<Branch<'repo>>, Error> {
     let all_branches = global_graph.branches(None)?
         .filter(|branch_result| match branch_result {
             Ok((_, t)) => *t == BranchType::Local,
@@ -66,15 +42,7 @@ fn get_conflicting_branches<'repo>(global_graph: &'repo Repository, target_head:
         });
     let branch_vec = all_branches.collect::<Result<Vec<Branch<'repo>>, git2::Error>>()?;
     return Ok(branch_vec);
-    // TODO(john): This will be updated after divergence is added.
 }
-
-//
-//enum CanMakeChanges {
-//    Ok,
-//    UnintegratedChanges(UnintegratedChange),
-//}
-
 
 /// Given a target_branch and some changes, determines whether these changes can be committed on
 /// this branch. If not, it returns a reasoning. 
@@ -151,24 +119,22 @@ fn check_integration(repo: &Repository, commit_head: &HeadCommit, files: &[GitPa
     Ok(unintegrated_changes)
 }
 
-/// This handler uses json extractor
+/// Handles requests made to check whether conflicts would occur after a commit is made at a give head.
 fn conflicts_after_commit(request: &HttpRequest<AppState>) -> Box<Future<Item=HttpResponse, Error=actix_web::Error>> {
     let work_dir = request.state().work_directory.clone();
     request.json().from_err()
         .and_then(move |payload: ConflictsAfterCommitRequest| {
             debug!("Received request: {:?}", payload);
 
-            let client = ClientSyncConfig {
-                repo_uuid: payload.repo_uuid.clone(),
-            };
-
             let repo_path = work_dir.join("repo");
             let repo = Repository::open_bare(repo_path).context("Could not open global graph repository path.").compat()?;
 
             // Verify the local client is properly synced. It's HEAD and Branch should be the same
             // in the global graph.
+//            let _client = ClientSyncConfig {
+//                repo_uuid: payload.repo_uuid.clone(),
+//            };
 //            let gg_branch = client.map_branch_to_global(&payload.repo_branch)?;
-
 //            let target_branch = repo.find_branch(&to_friendly_name(&gg_branch)?, BranchType::Local)
 //                .context(format!("The client's current branch [{:?}] was not found in the Global Graph.", &gg_branch)).compat()?;
 
@@ -242,6 +208,8 @@ struct Opt {
 }
 
 /// The main entry point of the server executable.
+/// This function may be dead if this crate is being used as a library, rather than a binary.
+#[allow(dead_code)]
 fn main() -> Result<(), Error> {
     env_logger::init();
 

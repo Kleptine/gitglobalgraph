@@ -20,6 +20,8 @@ use shared::CommitSha;
 use shared::RepositoryExtensions;
 use http::StatusCode;
 use git2::Status;
+use git2::CheckAttributeFlags;
+use git2::AttributeType;
 use shared::GitPath;
 
 /// precommit hook entry point
@@ -62,11 +64,15 @@ fn main_internal() -> Result<bool, Error> {
     // Get a list of the files the client has changed.
     let mut modified_paths: Vec<GitPath> = vec!();
 
-    for entry in repo.statuses(None)?.iter()
+    for entry in repo.statuses(None)?
+        .iter()
         .filter(|entry| (Status::INDEX_NEW | Status::INDEX_MODIFIED | Status::INDEX_DELETED | Status::INDEX_RENAMED).contains(entry.status()))
         {
             if let Some(path) = entry.path() {
-                modified_paths.push(GitPath::new(path))
+                let result = repo.get_attr(CheckAttributeFlags::empty(), path, "lockable").unwrap();
+                if result == AttributeType::True {
+                    modified_paths.push(GitPath::new(path))
+                }
             } else {
                 warn!("[Global Graph] Warning: Path is not valid UTF8 and will be ignored for conflict checks. [{}](lossy)", String::from_utf8_lossy(entry.path_bytes()));
             }

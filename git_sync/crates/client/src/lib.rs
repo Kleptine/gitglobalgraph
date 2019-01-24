@@ -2,11 +2,7 @@ use git2::Repository;
 use git2::BranchType;
 use git2::ErrorCode;
 use std::sync::{Once, ONCE_INIT};
-use log::LevelFilter;
 use std::path::Path;
-use regex::Regex;
-use uuid::Uuid;
-use hostname::get_hostname;
 use shared::ClientSyncConfig;
 use shared::ReferencePath;
 use failure::Error;
@@ -30,7 +26,7 @@ pub fn synchronize_local_repository<P: AsRef<Path>>(repository_path: P) -> Resul
     let uuid = get_or_create_client_uuid(&repo)?;
 
     debug!("Syncing repo [{}] to the global server.", uuid);
-    debug!("Global Graph remote url: [{}]", repo.find_remote("sync_server")?.url().ok_or(format_err!("The global graph remote url is not valid UTF8."))?);
+    debug!("Global Graph remote url: [{}]", repo.find_remote(shared::GLOBALGRAPH_REPO_NAME)?.url().ok_or(format_err!("The global graph remote url is not valid UTF8."))?);
 
     // Verify the repository is setup for git-sync
     let config = get_config(&repo)
@@ -53,7 +49,7 @@ pub fn synchronize_local_repository<P: AsRef<Path>>(repository_path: P) -> Resul
 
         debug!("Pushing refspec: {}", &refspec);
 
-        let _ = repo.find_remote("sync_server")?.push(&[&refspec], None)?;
+        let _ = repo.find_remote(shared::GLOBALGRAPH_REPO_NAME)?.push(&[&refspec], None)?;
     }
 
     Ok(())
@@ -75,7 +71,7 @@ pub fn get_or_create_client_uuid(repo: &Repository) -> Result<String, Error> {
             match e.code() {
                 ErrorCode::NotFound => {
                     let new_uuid = shared::generate_repo_id(&repo)?;
-                    
+
                     trace!("Failed to get UUID: Error: {:?}", e.code());
                     info!("No UUID set for this repository. Setting uuid to [{}]", &new_uuid);
                     repo.config()?.set_str("globalgraph.repouuid", &new_uuid)?;
@@ -97,7 +93,7 @@ fn get_config(repo: &Repository) -> Result<ClientSyncConfig, Error> {
     }
 
     Ok(ClientSyncConfig {
-        repo_uuid: repo_uuid,
+        repo_uuid,
     })
 }
 
@@ -107,10 +103,5 @@ static INIT_LOGGING: Once = ONCE_INIT;
 pub fn init_logging() {
     INIT_LOGGING.call_once(|| {
         simple_logger::init_with_level(Level::Trace).unwrap();
-//        let env = env_logger::Env::default()
-//            .filter_or(env_logger::DEFAULT_FILTER_ENV, "trace");
-//
-//        env_logger::Builder::from_env(env)
-//            .init();
     })
 }
