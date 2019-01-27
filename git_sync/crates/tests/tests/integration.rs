@@ -2,7 +2,7 @@ use test_utilities::*;
 use std::path::PathBuf;
 use actix_web::http;
 use crate::http::StatusCode;
-use actix_web::{HttpRequest, HttpMessage};
+use actix_web::{HttpMessage};
 use actix_web::test::TestServer;
 use std::str;
 use json::JsonValue;
@@ -13,7 +13,6 @@ use shared::CommitSha;
 use json::object;
 
 use failure::Error;
-use failure::ResultExt;
 use test_utilities::CommandError;
 use git2::BranchType;
 
