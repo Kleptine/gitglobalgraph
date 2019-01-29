@@ -1,42 +1,43 @@
-function Repo(test_name) {
-
-
+function Repo(test_name, render_only, default_no_files_changed) {
   var myTemplateConfig = {
-    colors: ['#66c2a5', '#fc8d62', '#8da0cb', '#e78ac3', '#a6d854', '#ffd92f', '#e5c494'], // branches colors, 1 per column
-    arrow: {
-      size: 15,
-      // offset: -1,
-      color: "#000",
-    },
+    colors: ['#679dc2', '#ce9ece', '#93cb81', '#9ce7df', '#d8a363', '#ffd92f', '#e5c494'], // branches colors, 1 per column
+    // arrow: {
+    //   // size: 15,
+    //   // offset: -1,
+    //   // color: "#000",
+    // },
     branch: {
-      lineWidth: 4,
+      lineWidth: 7,
       color: "#000",
-      mergeStyle: "straight",
-      spacingX: 50,
+      // mergeStyle: "straight",
+      spacingX: 90,
       showLabel: true,                  // display branch names on graph
-      labelFont: "normal 13pt Arial"
+      labelFont: "normal 16pt 'Source Sans Pro'",
     },
     commit: {
-      spacingY: -60,
+      spacingY: -80,
       dot: {
-        size: 12,
-        strokeWidth: 8,
+        size: 18,
+        strokeWidth: 12,
         strokeColor: "#000"
       },
       message: {
         displayAuthor: false,
         displayBranch: false,
-        displayHash: true,
+        displayHash: false,
         color: "black"
       },
     }
   };
+
   var myTemplate = new GitGraph.Template(myTemplateConfig);
 
+  this.render_only = render_only || false;
+  this.default_no_files_changed = default_no_files_changed || false;
 
   this.gitgraph = new GitGraph({
     template: myTemplate,
-    reverseArrow: false,
+    reverseArrow: true,
     orientation: "vertical-reverse",
     elementId: "graph_" + test_name,
   });
@@ -131,9 +132,13 @@ Branch.prototype.commit = function (args) {
     args = {}
   }
 
+  if (!args.filesChanged && this.repo.default_no_files_changed) {
+    args.filesChanged = [];
+  }
+
   // Remove outline if no files changed.
   if (args.filesChanged && args.filesChanged.length === 0) {
-    args.dotStrokeColor = "white";
+    args.dotStrokeColor = "#1a0007";
   }
 
   if (!args.tag && args.filesChanged) {
@@ -142,18 +147,20 @@ Branch.prototype.commit = function (args) {
     args.tag = "*.bin";
   }
 
-  try {
-    this.repo.verifyCanCommit(this, args ? args.filesChanged : undefined);
-  } catch (err) {
-    if (err.code === "locks") {
-      // If we can't commit, make the same commit, but color it RED.
-      args["dotStrokeColor"] = "red";
-      args["render_only"] = true;
-      this.gitGraphBranch.commit(args);
-      err.message = "\nError in commit [" + getBranchHead(this.gitGraphBranch).sha1 + "]\n" + err.message;
-      throw err;
-    } else {
-      throw err;
+  if (!this.repo.render_only) {
+    try {
+      this.repo.verifyCanCommit(this, args ? args.filesChanged : undefined);
+    } catch (err) {
+      if (err.code === "locks") {
+        // If we can't commit, make the same commit, but color it RED.
+        args["dotStrokeColor"] = "red";
+        args["render_only"] = true;
+        this.gitGraphBranch.commit(args);
+        err.message = "\nError in commit [" + getBranchHead(this.gitGraphBranch).sha1 + "]\n" + err.message;
+        throw err;
+      } else {
+        throw err;
+      }
     }
   }
 

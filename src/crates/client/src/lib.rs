@@ -102,6 +102,6 @@ static INIT_LOGGING: Once = ONCE_INIT;
 
 pub fn init_logging() {
     INIT_LOGGING.call_once(|| {
-        simple_logger::init_with_level(Level::Trace).unwrap();
+        simple_logger::init_with_level(Level::Warn).unwrap();
     })
 }

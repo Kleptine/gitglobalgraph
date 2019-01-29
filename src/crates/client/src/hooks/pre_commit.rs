@@ -69,10 +69,10 @@ fn main_internal() -> Result<bool, Error> {
         .filter(|entry| (Status::INDEX_NEW | Status::INDEX_MODIFIED | Status::INDEX_DELETED | Status::INDEX_RENAMED).contains(entry.status()))
         {
             if let Some(path) = entry.path() {
-                let result = repo.get_attr(CheckAttributeFlags::empty(), path, "lockable").unwrap();
-                if result == AttributeType::True {
+//                let result = repo.get_attr(CheckAttributeFlags::empty(), path, "lockable").unwrap();
+//                if result == AttributeType::True {
                     modified_paths.push(GitPath::new(path))
-                }
+//                }
             } else {
                 warn!("[Global Graph] Warning: Path is not valid UTF8 and will be ignored for conflict checks. [{}](lossy)", String::from_utf8_lossy(entry.path_bytes()));
             }

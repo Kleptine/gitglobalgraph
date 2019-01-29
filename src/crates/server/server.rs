@@ -50,17 +50,21 @@ fn check_integration(repo: &Repository, commit_head: &HeadCommit, files: &[GitPa
     let branches = get_conflicting_branches(&repo, &commit_head)?;
     let mut unintegrated_changes = vec!();
     let commit_head_object = match commit_head {
-        Some(commit) => Some(repo.find_commit(Oid::from_str(commit)?)?),
+        Some(commit) => {
+            println!("repo: {:?}", &repo.path());
+            println!("commit: {:?}", &commit.0);
+            Some(repo.find_commit(Oid::from_str(&commit.0)?)?)
+        },
         None => None
     };
 
     // For every branch that can conflict with the client's branch, check to make sure
     // the client has integrated its changes, for the files specified.
     for conflict_branch in branches {
-        debug!("Checking branch [{}]", conflict_branch.name()?.ok_or(format_err!("Conflict candidate branch has a name that is not valid UTF8."))?);
+        println!("Checking branch [{}]", conflict_branch.name()?.ok_or(format_err!("Conflict candidate branch has a name that is not valid UTF8."))?);
 
         for file in files {
-            debug!("   - checking file [{:?}]", file);
+            println!("   - checking file [{:?}]", file);
 
             // Find the most recent commit that touches this file on the conflict branch.
             let mut revwalk = repo.revwalk()?;
@@ -93,7 +97,7 @@ fn check_integration(repo: &Repository, commit_head: &HeadCommit, files: &[GitPa
                         // the changed file.
                         None => false
                     };
-                    debug!("Found latest commit [{:?}]. Does the target branch integrate it: [{}]", latest_commit, does_integrate);
+                    println!("Found latest commit [{:?}]. Does the target branch integrate it: [{}]", latest_commit, does_integrate);
 
                     if does_integrate {
                         // The target head already integrated this change, so we don't have a conflict.
@@ -124,7 +128,7 @@ fn conflicts_after_commit(request: &HttpRequest<AppState>) -> Box<Future<Item=Ht
     let work_dir = request.state().work_directory.clone();
     request.json().from_err()
         .and_then(move |payload: ConflictsAfterCommitRequest| {
-            debug!("Received request: {:?}", payload);
+            println!("Received request: {:?}", payload);
 
             let repo_path = work_dir.join("repo");
             let repo = Repository::open_bare(repo_path).context("Could not open global graph repository path.").compat()?;
@@ -209,7 +213,6 @@ struct Opt {
 
 /// The main entry point of the server executable.
 /// This function may be dead if this crate is being used as a library, rather than a binary.
-#[allow(dead_code)]
 fn main() -> Result<(), Error> {
     env_logger::init();
 
@@ -237,7 +240,7 @@ fn main() -> Result<(), Error> {
     }
 
     let sys = actix::System::new("global-graph-server");
-    server::new(create_server_factory(&::std::env::current_dir().unwrap())?)
+    server::new(create_server_factory(&args.work_directory)?)
         .bind(&args.bind_address)?
         .shutdown_timeout(5)
         .start();

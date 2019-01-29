@@ -282,11 +282,9 @@
     // Resize canvas
     var unscaledResolution = {
       x: Math.abs((this.columnMax + 1) * this.template.branch.spacingX) +
-      Math.abs(this.commitOffsetX) +
-      this.marginX * 2,
+      Math.abs(this.commitOffsetX) + this.marginX * 2,
       y: Math.abs((this.columnMax + 1) * this.template.branch.spacingY) +
-      Math.abs(this.commitOffsetY) +
-      this.marginY * 2
+      Math.abs(this.commitOffsetY) + this.marginY * 2
     };
 
     if (this.template.commit.message.display) {
@@ -1505,7 +1503,7 @@
     this.commit.tag = {};
     this.commit.tag.color = options.commit.tag.color || this.commit.dot.color;
     this.commit.tag.font = options.commit.tag.font || options.commit.message.font || "normal 10pt Calibri";
-    this.commit.tag.spacingX = this.branch.spacingX;
+    this.commit.tag.spacingX = 95;//this.branch.spacingX;
     this.commit.tag.spacingY = this.commit.spacingY;
 
     this.commit.message = {};

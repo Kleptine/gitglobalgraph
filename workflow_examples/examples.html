@@ -5,60 +5,67 @@
     <title>Title</title>
     <script src="gitgraph.js"></script>
     <script src="gitwrapper.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/vis/4.21.0/vis.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.17.10/lodash.js"></script>
+    <link href="https://fonts.googleapis.com/css?family=Source+Sans+Pro" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css?family=Source+Code+Pro" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/gitgraph.js/1.11.4/gitgraph.css"/>
+    <style>
+        canvas {
+            display: block;
+        }
+    </style>
 </head>
-<body>
-<canvas id="gitGraph"></canvas>
+
+<canvas id="graph_simple_example"></canvas>
 
 <script type="text/javascript">
-  const template = new GitGraph.Template({
-    colors: ["#979797", "#008fb5", "#f1c109"],
-    branch: {
-      lineWidth: 10,
-      spacingX: 50,
-      labelRotation: 0,
-    },
-    commit: {
-      spacingY: -60,
-      dot: {
-        size: 14
-      },
-      message: {
-        font: "normal 14pt Arial"
-      }
+    function cloneCanvas(oldCanvas) {
+        //create a new canvas
+        var newCanvas = document.createElement('canvas');
+        var context = newCanvas.getContext('2d');
+
+        //set dimensions
+        newCanvas.width = oldCanvas.width;
+        newCanvas.height = oldCanvas.height;
+
+        //apply the old canvas to the new one
+        context.drawImage(oldCanvas, 0, 0);
+
+        document.body.insertBefore(newCanvas, oldCanvas)
+        return newCanvas;
     }
-  })
 
-  var gitgraph = new GitGraph({
-    template: template,
-    orientation: "vertical-reverse",
-    mode: "compact"
-  });
+    const canvas = document.getElementById("graph_simple_example");
+    const gitgraph = new Repo("simple_example", true, true);
 
-  var master = gitgraph.branch({
-    name: "master",
-    column: 2,
-  });
+    const master = gitgraph.branch({
+        name: "master",
+    });
 
-  gitgraph.commit({tag: "master"}).commit().commit();         // 3 commits upon HEAD
-  var topic = master.branch({
-    name: "topic",
-    column: 3
-  }); // New branch from develop
+    master.commit().commit().commit();
 
-  // Well, if you need to go deeper…
+    cloneCanvas(canvas);
 
-  var maintenance = gitgraph.branch({
-    parentBranch: master,
-    name: "maintenance",
-    column: 1             // which column index it should be displayed in
-  });
-  maintenance.commit({
-    tag: "maintenance"
-  });
-  topic.commit({
-    tag: "topic"
-  });
+    let feature = master.branch({
+        name: "feature",
+    });
+
+    feature.commit({
+        tagFont: "normal 14pt 'Source Sans Pro'",
+        filesChanged: ["file.bin"]});
+
+    cloneCanvas(canvas);
+    feature.merge(master);
+
+    cloneCanvas(canvas);
+    master.commit({
+        filesChanged: ["file.bin"],
+        tagFont: "normal 14pt 'Source Sans Pro'",
+    });
+
+
 </script>
+
 </body>
 </html>

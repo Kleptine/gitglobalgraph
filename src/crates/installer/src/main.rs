@@ -94,6 +94,7 @@ fn main() -> Result<(), Error> {
     info!("All hooks updated.");
 
     info!("Verifying global graph repository URL: [{}]", args.global_graph_url);
+    // TODO(john): Implement
 
     repo.config()
         .context("Error when accessing the configuration store for this Git repo. Could not mark repository as 'installed'.")?
@@ -149,8 +150,9 @@ fn install_hook(repo: &Repository, hook_name: &str, hook_bytes: &[u8]) -> Result
     // Add sh files that executes all hooks in the hook.d directory.
     info!("Writing new hook to [{:?}] that executes all the hooks in [{}] directory.", hook_path, hookd_directory_name);
     fs::write(hook_path, format!(
-"#HOOK_DISPATCH
-for file in ./{}.d/*; do $file; done", hook_name))?;
+    "#!/bin/sh
+     #HOOK_DISPATCH
+     for file in ./.git/hooks/{}.d/*; do $file; done" , hook_name))?;
 
     Ok(())
 }
